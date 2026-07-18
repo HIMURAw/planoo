@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
+/* Committed to a single dark theme rather than light/dark toggling —
+   glassmorphism (translucent, blurred panels) only reads as "premium" with
+   real contrast behind it. A light-mode variant of the same panels looks
+   muddy, not glassy. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #05050a;
+  --foreground: #f4f4f5;
 }
 
 @theme inline {
@@ -12,15 +16,49 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Ambient app background: a soft multi-color glow plus a faint grid, fixed
+   behind everything so glass panels always have something worth blurring.
+   Applied once on <body> (see layout.tsx) instead of repeated per-section —
+   sections that want a stronger local glow (Hero) still add their own on
+   top of this. */
+.app-canvas-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 600px at 15% -10%, rgba(139, 92, 246, 0.18), transparent 60%),
+    radial-gradient(ellipse 800px 500px at 100% 10%, rgba(59, 130, 246, 0.14), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 50% 100%, rgba(217, 70, 239, 0.1), transparent 60%);
+}
+
+.app-canvas-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black, transparent 75%);
+}
+
+/* Reusable glass panel — the one place this recipe is defined, so every
+   card/nav/modal in the app stays visually consistent instead of each
+   component inventing its own blur/opacity numbers. */
+.glass-panel {
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+    0 8px 32px -8px rgba(0, 0, 0, 0.5);
 }

@@ -19,15 +19,11 @@ export function AgentSetup() {
 
   if (apiKey) {
     return (
-      <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950">
-        <p className="font-medium text-amber-900 dark:text-amber-200">
-          Bu anahtarı şimdi kopyala — bir daha gösterilmeyecek.
-        </p>
-        <code className="select-all rounded bg-white px-2 py-1 text-xs dark:bg-black">{apiKey}</code>
-        <p className="text-xs text-zinc-600 dark:text-zinc-400">
-          Veritabanı makinende/CI&apos;da çalıştır:
-        </p>
-        <code className="select-all whitespace-pre-wrap rounded bg-white px-2 py-1 text-xs dark:bg-black">
+      <div className="flex flex-col gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm">
+        <p className="font-medium text-amber-200">Bu anahtarı şimdi kopyala — bir daha gösterilmeyecek.</p>
+        <code className="select-all rounded bg-black/40 px-2 py-1 text-xs text-amber-100">{apiKey}</code>
+        <p className="text-xs text-zinc-400">Veritabanı makinende/CI&apos;da çalıştır:</p>
+        <code className="select-all whitespace-pre-wrap rounded bg-black/40 px-2 py-1 text-xs text-zinc-300">
           {`PLANOO_API_KEY=${apiKey} AGENT_DATABASE_URL="mysql://user:pass@host:3306/db" \\\n  curl -s https://planoo.xyz/agent.js | node -`}
         </code>
       </div>
@@ -39,7 +35,7 @@ export function AgentSetup() {
       type="button"
       onClick={handleGenerate}
       disabled={generating}
-      className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+      className="rounded-full bg-white px-4 py-2 text-sm font-medium text-black shadow-lg shadow-white/10 transition-transform hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
     >
       {generating ? "Oluşturuluyor…" : "Agent bağla"}
     </button>

@@ -23,7 +23,7 @@ export function WhyUs() {
         {REASONS.map((reason) => (
           <div
             key={reason.title}
-            className="rounded-xl border border-white/10 bg-white/[0.03] p-6 transition-colors hover:bg-white/[0.06]"
+            className="glass-panel p-6 transition-colors duration-300 hover:bg-white/10"
           >
             <h3 className="text-lg font-medium text-white">{reason.title}</h3>
             <p className="mt-3 text-sm leading-relaxed text-zinc-400">{reason.body}</p>

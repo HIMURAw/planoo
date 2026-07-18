@@ -37,25 +37,23 @@ export function FigmaFileConnect({ onConnected }: FigmaFileConnectProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-        Figma dosya linki veya key&apos;i
-      </label>
+      <label className="text-sm font-medium text-zinc-300">Figma dosya linki veya key&apos;i</label>
       <div className="flex gap-2">
         <input
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="https://www.figma.com/design/AbC123.../my-file"
-          className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-zinc-500 focus:border-violet-400/50 focus:outline-none"
         />
         <button
           type="submit"
           disabled={submitting || value.trim().length === 0}
-          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+          className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
         >
           Bağla
         </button>
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
     </form>
   );
 }

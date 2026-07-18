@@ -21,28 +21,26 @@ export function LinkReviewPanel({ links, onConfirm, onReject, pending }: LinkRev
   const highConfidence = actionable.filter((l) => l.confidence >= CONFIDENCE_THRESHOLD);
   const lowConfidence = actionable.filter((l) => l.confidence < CONFIDENCE_THRESHOLD);
 
-  if (actionable.length === 0) {
-    return (
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-        Onay bekleyen öneri yok.
-      </p>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-4">
-      {highConfidence.length > 0 && (
-        <LinkGroup title="Öneriler" links={highConfidence} onConfirm={onConfirm} onReject={onReject} pending={pending} />
-      )}
-      {lowConfidence.length > 0 && (
-        <LinkGroup
-          title="Düşük güvenli öneriler"
-          links={lowConfidence}
-          onConfirm={onConfirm}
-          onReject={onReject}
-          pending={pending}
-          muted
-        />
+    <div className="glass-panel flex flex-col gap-4 p-5">
+      {actionable.length === 0 ? (
+        <p className="text-sm text-zinc-400">Onay bekleyen öneri yok.</p>
+      ) : (
+        <>
+          {highConfidence.length > 0 && (
+            <LinkGroup title="Öneriler" links={highConfidence} onConfirm={onConfirm} onReject={onReject} pending={pending} />
+          )}
+          {lowConfidence.length > 0 && (
+            <LinkGroup
+              title="Düşük güvenli öneriler"
+              links={lowConfidence}
+              onConfirm={onConfirm}
+              onReject={onReject}
+              pending={pending}
+              muted
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -58,30 +56,28 @@ function LinkGroup({
 }: LinkReviewPanelProps & { title: string; muted?: boolean }) {
   return (
     <div>
-      <h3 className={`mb-2 text-xs font-semibold uppercase tracking-wide ${muted ? "text-zinc-400" : "text-zinc-600 dark:text-zinc-300"}`}>
+      <h3 className={`mb-2 text-xs font-semibold uppercase tracking-wide ${muted ? "text-zinc-500" : "text-zinc-300"}`}>
         {title} ({links.length})
       </h3>
       <ul className="flex flex-col gap-2">
         {links.map((link) => (
           <li
             key={link.id}
-            className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm ${
-              muted
-                ? "border-zinc-100 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50"
-                : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+            className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${
+              muted ? "border-white/5 bg-white/2 text-zinc-500" : "border-white/10 bg-white/5 text-zinc-200"
             }`}
           >
             <span className="truncate">
-              {link.state === "stale" && <span className="mr-1 text-amber-600">↻</span>}
-              <strong>{link.figmaNodeId}</strong> → {link.dbTableName}.{link.dbColumnName}
-              <span className="ml-2 text-xs text-zinc-400">{Math.round(link.confidence * 100)}%</span>
+              {link.state === "stale" && <span className="mr-1 text-amber-400">↻</span>}
+              <strong className="text-white">{link.figmaNodeId}</strong> → {link.dbTableName}.{link.dbColumnName}
+              <span className="ml-2 text-xs text-zinc-500">{Math.round(link.confidence * 100)}%</span>
             </span>
             <span className="flex shrink-0 gap-1">
               <button
                 type="button"
                 disabled={pending.has(link.id)}
                 onClick={() => onConfirm(link.id)}
-                className="rounded bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                className="rounded-full bg-emerald-500/90 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
               >
                 Onayla
               </button>
@@ -89,7 +85,7 @@ function LinkGroup({
                 type="button"
                 disabled={pending.has(link.id)}
                 onClick={() => onReject(link.id)}
-                className="rounded bg-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-200"
+                className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-white/20 disabled:opacity-50"
               >
                 Reddet
               </button>

@@ -94,20 +94,20 @@ export function Dashboard({
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-8">
-      <header className="flex items-center justify-between">
+      <header className="glass-panel flex items-center justify-between px-5 py-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-black dark:text-zinc-50">planoo</h1>
-          <span className="rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs font-medium text-zinc-500 dark:border-zinc-700">
+          <span className="flex items-center gap-2 text-xl font-semibold tracking-tight text-white">
+            <span className="h-2 w-2 rounded-full bg-linear-to-br from-violet-400 to-blue-400" />
+            planoo
+          </span>
+          <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-xs font-medium text-zinc-300">
             {PLAN_LABEL[plan]}
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-zinc-500">Merhaba, {userName}</span>
+          <span className="text-sm text-zinc-400">Merhaba, {userName}</span>
           <form action={onSignOut}>
-            <button
-              type="submit"
-              className="text-sm text-zinc-500 underline hover:text-zinc-800 dark:hover:text-zinc-200"
-            >
+            <button type="submit" className="text-sm text-zinc-400 underline hover:text-white">
               Çıkış yap
             </button>
           </form>
@@ -131,7 +131,7 @@ export function Dashboard({
               type="button"
               onClick={handleRecheck}
               disabled={status.kind === "loading"}
-              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+              className="rounded-full bg-white px-5 py-2.5 text-sm font-medium text-black shadow-lg shadow-white/10 transition-transform hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
             >
               {status.kind === "loading" ? "Kontrol ediliyor…" : "Yeniden kontrol et"}
             </button>
@@ -159,13 +159,13 @@ export function Dashboard({
 
 function UpgradeBanner() {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm dark:border-violet-900 dark:bg-violet-950">
-      <span className="text-violet-900 dark:text-violet-200">
+    <div className="glass-panel flex items-center justify-between border-violet-400/30! bg-linear-to-r! from-violet-500/15! to-fuchsia-500/10! px-5 py-3.5 text-sm">
+      <span className="text-violet-200">
         Ücretsiz plandasın — sınırsız proje ve şemadan koda export (SQL/Prisma/TypeORM) için Solo&apos;ya geç.
       </span>
       <a
         href="/api/lemonsqueezy/checkout?plan=solo"
-        className="shrink-0 rounded-full bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700"
+        className="shrink-0 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-4 py-1.5 text-xs font-medium text-white shadow-lg shadow-violet-500/25 transition-transform hover:scale-105"
       >
         Yükselt
       </a>
@@ -187,16 +187,16 @@ function SetupSteps({
   onFigmaFileConnected: (key: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-6 rounded-lg border border-zinc-200 p-6 dark:border-zinc-800">
-      <h2 className="text-lg font-medium">İlk kurulum</h2>
+    <div className="glass-panel flex flex-col gap-6 p-6">
+      <h2 className="text-lg font-medium text-white">İlk kurulum</h2>
 
       <Step done={hasFigmaAccount} title="1. Figma hesabını bağla">
         {hasFigmaAccount ? (
-          <p className="text-sm text-zinc-500">Figma hesabı bağlı.</p>
+          <p className="text-sm text-zinc-400">Figma hesabı bağlı.</p>
         ) : (
           <a
             href="/api/figma/connect"
-            className="inline-block rounded-md bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+            className="inline-block rounded-full bg-white px-4 py-2 text-sm font-medium text-black shadow-lg shadow-white/10 transition-transform hover:scale-105"
           >
             Figma hesabını bağla
           </a>
@@ -205,11 +205,11 @@ function SetupSteps({
 
       <Step done={fileKey !== null} title="2. Figma dosyanı bağla">
         {!hasFigmaAccount ? (
-          <p className="text-sm text-zinc-400">Önce Figma hesabını bağla.</p>
+          <p className="text-sm text-zinc-500">Önce Figma hesabını bağla.</p>
         ) : fileKey === null ? (
           <FigmaFileConnect onConnected={onFigmaFileConnected} />
         ) : (
-          <p className="text-sm text-zinc-500">Bağlı: {fileKey}</p>
+          <p className="text-sm text-zinc-400">Bağlı: {fileKey}</p>
         )}
       </Step>
 
@@ -217,9 +217,9 @@ function SetupSteps({
         {!hasAgentKey ? (
           <AgentSetup />
         ) : hasDbSnapshot ? (
-          <p className="text-sm text-zinc-500">Veritabanı şeması alındı.</p>
+          <p className="text-sm text-zinc-400">Veritabanı şeması alındı.</p>
         ) : (
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-zinc-400">
             Anahtar oluşturuldu, agent&apos;ın çalıştırılması bekleniyor. Sayfayı yenile.
           </p>
         )}
@@ -231,10 +231,10 @@ function SetupSteps({
 function Step({ done, title, children }: { done: boolean; title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="flex items-center gap-2 text-sm font-medium">
+      <h3 className="flex items-center gap-2 text-sm font-medium text-white">
         <span
           className={`flex h-5 w-5 items-center justify-center rounded-full text-xs ${
-            done ? "bg-green-600 text-white" : "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
+            done ? "bg-emerald-500 text-white" : "bg-white/10 text-zinc-400"
           }`}
         >
           {done ? "✓" : ""}
@@ -251,8 +251,8 @@ function EmptyState() {
   // must read differently from "no drift found", since there's nothing to
   // compare against yet on a first check.
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-zinc-300 p-12 text-center dark:border-zinc-700">
-      <p className="text-zinc-600 dark:text-zinc-400">
+    <div className="glass-panel flex flex-col items-center gap-2 border-dashed! p-12 text-center">
+      <p className="text-zinc-400">
         Henüz hiç bağlantı yok. Yukarıdaki &quot;Yeniden kontrol et&quot; ile ilk taramayı başlat.
       </p>
     </div>
@@ -261,18 +261,14 @@ function EmptyState() {
 
 function StatusBanner({ status }: { status: RecheckStatus }) {
   if (status.kind === "success" && status.isFirstRun) {
-    return (
-      <span className="text-sm text-green-700 dark:text-green-400">
-        İlk kurulum tamamlandı — önerileri gözden geçir.
-      </span>
-    );
+    return <span className="text-sm text-emerald-400">İlk kurulum tamamlandı — önerileri gözden geçir.</span>;
   }
   if (status.kind === "success") {
-    return <span className="text-sm text-zinc-500">Kontrol tamamlandı.</span>;
+    return <span className="text-sm text-zinc-400">Kontrol tamamlandı.</span>;
   }
   if (status.kind === "error" && status.code === "pending_figma_reauth") {
     return (
-      <span className="text-sm text-amber-700 dark:text-amber-400">
+      <span className="text-sm text-amber-400">
         {status.message}{" "}
         <button
           type="button"
@@ -287,7 +283,7 @@ function StatusBanner({ status }: { status: RecheckStatus }) {
     );
   }
   if (status.kind === "error") {
-    return <span className="text-sm text-red-600">{status.message}</span>;
+    return <span className="text-sm text-red-400">{status.message}</span>;
   }
   return null;
 }

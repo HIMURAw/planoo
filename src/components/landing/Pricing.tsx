@@ -22,14 +22,14 @@ export function Pricing({ onSignIn }: PricingProps) {
           {PLANS.map((plan) => (
             <div
               key={plan.id}
-              className={`relative flex flex-col rounded-2xl border p-8 ${
+              className={`relative flex flex-col p-8 ${
                 plan.highlighted
-                  ? "border-violet-400/40 bg-gradient-to-b from-violet-500/10 to-transparent"
-                  : "border-white/10 bg-white/[0.03]"
+                  ? "glass-panel border-violet-400/40! bg-linear-to-b! from-violet-500/15! to-white/5! shadow-[0_20px_60px_-15px_rgba(139,92,246,0.45)]!"
+                  : "glass-panel"
               }`}
             >
               {plan.highlighted && (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-violet-500 px-3 py-1 text-xs font-medium text-white">
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 px-3 py-1 text-xs font-medium text-white shadow-lg shadow-violet-500/30">
                   En popüler
                 </span>
               )}
@@ -52,8 +52,8 @@ export function Pricing({ onSignIn }: PricingProps) {
                   type="submit"
                   className={`w-full rounded-full px-5 py-3 text-sm font-medium transition-transform hover:scale-105 ${
                     plan.highlighted
-                      ? "bg-white text-black"
-                      : "border border-white/15 text-white hover:bg-white/5"
+                      ? "bg-white text-black shadow-lg shadow-white/10"
+                      : "border border-white/15 bg-white/5 text-white hover:bg-white/10"
                   }`}
                 >
                   {plan.cta}

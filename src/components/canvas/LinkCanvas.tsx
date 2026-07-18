@@ -17,9 +17,9 @@ import type { LinkView } from "./types";
 // change if the palette is revisited.
 const STATE_STYLE: Record<LinkView["state"], { border: string; label: string }> = {
   suggested: { border: "#a1a1aa", label: "Önerilen" },
-  confirmed: { border: "#16a34a", label: "Onaylandı" },
-  stale: { border: "#ca8a04", label: "Değişti" },
-  broken: { border: "#dc2626", label: "Kırık" },
+  confirmed: { border: "#34d399", label: "Onaylandı" },
+  stale: { border: "#facc15", label: "Değişti" },
+  broken: { border: "#f87171", label: "Kırık" },
   rejected: { border: "#71717a", label: "Reddedildi" },
 };
 
@@ -35,9 +35,15 @@ export function LinkCanvas({ links }: LinkCanvasProps) {
   const { nodes, edges } = useMemo(() => buildGraph(links), [links]);
 
   return (
-    <div style={{ height: "70vh" }} className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800">
-      <ReactFlow nodes={nodes} edges={edges} fitView proOptions={{ hideAttribution: true }}>
-        <Background />
+    <div style={{ height: "70vh" }} className="glass-panel overflow-hidden">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        fitView
+        colorMode="dark"
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background color="#ffffff20" gap={24} />
         <Controls />
       </ReactFlow>
     </div>
@@ -63,7 +69,14 @@ function buildGraph(links: LinkView[]) {
       id: `figma:${figmaNodeId}`,
       position: { x: 0, y: i * ROW_HEIGHT },
       data: { label: figmaNodeId },
-      style: { background: "#ede9fe", border: "1px solid #8b5cf6", borderRadius: 8, padding: 8 },
+      style: {
+        background: "rgba(139, 92, 246, 0.18)",
+        color: "#ede9fe",
+        border: "1px solid rgba(167, 139, 250, 0.5)",
+        borderRadius: 10,
+        padding: 8,
+        backdropFilter: "blur(8px)",
+      },
     });
   });
 
@@ -72,7 +85,14 @@ function buildGraph(links: LinkView[]) {
       id: `db:${key}`,
       position: { x: 420, y: i * ROW_HEIGHT },
       data: { label: key },
-      style: { background: "#dbeafe", border: "1px solid #3b82f6", borderRadius: 8, padding: 8 },
+      style: {
+        background: "rgba(59, 130, 246, 0.18)",
+        color: "#dbeafe",
+        border: "1px solid rgba(96, 165, 250, 0.5)",
+        borderRadius: 10,
+        padding: 8,
+        backdropFilter: "blur(8px)",
+      },
     });
   });
 
@@ -87,6 +107,7 @@ function buildGraph(links: LinkView[]) {
       label: `${style.label} · ${Math.round(link.confidence * 100)}%${lowConfidence ? " (düşük güven)" : ""}`,
       style: { stroke: style.border, strokeDasharray: lowConfidence ? "4 4" : undefined },
       labelStyle: { fill: style.border, fontSize: 11 },
+      labelBgStyle: { fill: "#0a0a0f", fillOpacity: 0.8 },
       animated: link.state === "broken",
     });
   }
