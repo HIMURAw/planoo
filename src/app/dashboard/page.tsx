@@ -10,11 +10,14 @@ export default async function DashboardPage() {
     redirect("/");
   }
 
-  const [user, links, dbSnapshotCount, agentKeyCount, figmaAccount] = await Promise.all([
+  const [user, links, designedTables, figmaAccount] = await Promise.all([
     prisma.user.findUnique({ where: { id: session.user.id } }),
     prisma.link.findMany({ where: { userId: session.user.id }, orderBy: { updatedAt: "desc" } }),
-    prisma.schemaSnapshot.count({ where: { userId: session.user.id, source: "mysql" } }),
-    prisma.agentApiKey.count({ where: { userId: session.user.id, revokedAt: null } }),
+    prisma.designedTable.findMany({
+      where: { userId: session.user.id },
+      include: { columns: { orderBy: { order: "asc" } } },
+      orderBy: { createdAt: "asc" },
+    }),
     prisma.account.findFirst({ where: { userId: session.user.id, provider: "figma" } }),
   ]);
 
@@ -29,8 +32,7 @@ export default async function DashboardPage() {
       plan={user?.plan ?? "free"}
       hasFigmaAccount={figmaAccount !== null}
       figmaFileKey={user?.figmaFileKey ?? null}
-      hasDbSnapshot={dbSnapshotCount > 0}
-      hasAgentKey={agentKeyCount > 0}
+      initialDesignedTables={designedTables}
       initialLinks={links.map((l) => ({
         id: l.id,
         figmaNodeId: l.figmaNodeId,

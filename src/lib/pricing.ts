@@ -30,6 +30,7 @@ export const PLANS: PlanDefinition[] = [
       "1 aktif proje",
       "10 veri tabanı tablosu çizimi",
       "Manuel / sınırlı Figma senkronizasyonu",
+      "Şemanı .sql olarak indir",
     ],
     cta: "Ücretsiz başla",
   },
@@ -42,7 +43,7 @@ export const PLANS: PlanDefinition[] = [
     features: [
       "Sınırsız proje",
       "Otomatik Figma API senkronizasyonu",
-      "Şemayı direkt koda dönüştür (SQL, Prisma, TypeORM export)",
+      "Şemayı direkt koda dönüştür (Prisma, TypeORM export)",
     ],
     cta: "Solo'ya geç",
     variantEnvVar: "LEMONSQUEEZY_SOLO_VARIANT_ID",

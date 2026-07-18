@@ -34,6 +34,7 @@ model User {
   links           Link[]
   agentApiKeys    AgentApiKey[]
   subscription    Subscription?
+  designedTables  DesignedTable[]
 }
 
 model Account {
@@ -76,6 +77,8 @@ model VerificationToken {
 
 enum SnapshotSource {
   figma
+  // Pushed by scripts/agent.ts from a live DB read — now an optional/
+  // advanced path (see DesignedTable below for the default one).
   mysql
 }
 
@@ -140,6 +143,48 @@ model Link {
 
   @@unique([userId, figmaNodeId, dbTableName, dbColumnName])
   @@index([userId, state])
+}
+
+// A table the user designed directly in planoo's schema builder — the
+// default, friction-free way to get a DB schema into planoo (added after
+// live usage showed the agent-connect step was the biggest onboarding
+// drop-off point; scripts/agent.ts remains available as an optional
+// "sync from a real live DB" path, see TODOS.md). No snapshot/retention
+// concept needed here unlike SchemaSnapshot — this data doesn't come from
+// an external source that can drift out from under us; editing IS the
+// update. /api/recheck reads these fresh every time.
+model DesignedTable {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  columns DesignedColumn[]
+
+  @@unique([userId, name])
+}
+
+model DesignedColumn {
+  id               String  @id @default(cuid())
+  tableId          String
+  name             String
+  // Free-text SQL type ("varchar(255)", "int", "text", ...) rather than an
+  // enum — v0 doesn't need to validate SQL type syntax, just pass it
+  // through to matching (name/type similarity, see lib/matcher) and to the
+  // .sql export (lib/schema-export.ts).
+  dataType         String
+  nullable         Boolean @default(true)
+  isPrimaryKey     Boolean @default(false)
+  isForeignKey     Boolean @default(false)
+  referencesTable  String?
+  referencesColumn String?
+  order            Int     @default(0)
+
+  table DesignedTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([tableId, name])
 }
 
 // Single-use key a user generates from the web UI and passes to

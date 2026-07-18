@@ -3,6 +3,16 @@
 Items deferred during `/plan-ceo-review` (SCOPE REDUCTION mode) on 2026-07-18.
 See design doc: `~/.gstack/projects/HIMURAw-planoo/zamto-main-design-20260718-141641.md`
 
+## P2 — Live/automatic DB sync (scripts/agent.ts is now optional, not default)
+**What:** The onboarding flow's step 3 was originally "run planoo-agent against your real database" — live usage showed this was the single biggest friction point (requires a running DB, credentials, a terminal). Replaced with an in-browser schema builder (`DesignedTable`/`DesignedColumn`, `src/components/canvas/SchemaBuilder.tsx`) that needs zero setup and exports directly to `.sql`. `scripts/agent.ts`, `/api/agent/push`, `/api/agent-key`, and `AgentApiKey` all still work exactly as before — they're just no longer wired into `Dashboard.tsx`'s required setup steps, and `/api/recheck` (via `src/lib/schema-source.ts`) now prefers designed tables and only falls back to an agent-pushed snapshot if no tables were designed.
+**Why:** Removing onboarding friction was an explicit, direct instruction — not a scope call made unilaterally.
+**Pros:** Anyone who DOES want to track a real, live database (so drift is detected automatically instead of edited by hand) still can — the plumbing is intact, just needs a UI entry point again (e.g. a "Gelişmiş: gerçek veritabanına bağlan" section/settings page).
+**Cons:** Right now there's no way to discover the agent path from the UI at all — it's dead code from a user's perspective until re-surfaced somewhere.
+**Context:** When re-surfacing, decide whether schema-builder tables and an agent-synced snapshot can coexist for the same user (right now `getDbColumns()` treats them as mutually exclusive: designed tables always win if any exist) — probably fine for v0, but a user who designs a schema AND later connects a real DB would silently stop seeing their designed-table changes reflected.
+**Effort:** M (human: ~3-5 days) → CC: ~1 day
+**Priority:** P2
+**Depends on / blocked by:** User demand — no one has hit this gap yet since the schema builder just shipped.
+
 ## P1 — Multi-project data model (needed to actually enforce plan limits)
 **What:** The landing page advertises "Free: 1 aktif proje, 10 tablo çizimi" vs. "Solo/Team: sınırsız proje" — but the whole app is still single-Figma-file/single-DB-schema per account (`User.figmaFileKey` is one field, not a list). There is currently NO code enforcing these limits; every signed-in user, regardless of `plan`, has the same one-project capacity.
 **Why:** Pricing copy and billing (Lemon Squeezy checkout + webhook, `User.plan`) were built per explicit instruction, but building the actual multi-project data model (and the UI to manage multiple projects) is a materially bigger scope than "set up payment infra" — it touches `SchemaSnapshot`, `Link`, `AgentApiKey`, and most of the dashboard UI. Flagging rather than silently expanding scope to build it unasked, consistent with the SCOPE REDUCTION discipline this project started with.

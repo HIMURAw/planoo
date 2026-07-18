@@ -2,7 +2,7 @@
 
 A modern SaaS platform that bridges the gap between UI designs and database architectures. Map your Figma screens directly to database schemas, write structured blueprint notes, and plan your entire software development lifecycle in one place.
 
-**MVP wedge:** UI-to-DB traceability — automatically match elements on Figma screens to the database tables/columns they represent, and surface it when that mapping drifts (a column gets renamed or dropped, a Figma field changes).
+**MVP wedge:** UI-to-DB traceability — automatically match elements on Figma screens to the database tables/columns they represent, and surface it when that mapping drifts (a column gets renamed or dropped, a Figma field changes). Onboarding: connect Figma, design your schema right in the browser (or optionally sync a real database via the CLI agent), get matched.
 
 ## Status
 

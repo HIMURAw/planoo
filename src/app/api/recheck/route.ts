@@ -3,16 +3,16 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getValidFigmaAccessToken, FigmaReauthRequiredError } from "@/lib/figma-client";
 import { fetchFigmaFileNodes } from "@/lib/figma-schema";
-import { createSnapshot, getLatestSnapshot, getPreviousSnapshot } from "@/lib/snapshot";
+import { createSnapshot, getPreviousSnapshot } from "@/lib/snapshot";
 import { runMatcher } from "@/lib/matcher";
-import type { DbColumn } from "@/lib/matcher/types";
+import { getDbColumns } from "@/lib/schema-source";
 
 // The main "yeniden kontrol et" action from the canvas. Figma fetch and DB
 // schema are decoupled by design (design doc "Üretim hata senaryosu"): the
-// DB side is already durably stored by /api/agent/push before the user ever
-// clicks this button, so if the Figma token has expired mid-flow here, nothing
-// pushed by the agent is lost — the client just needs the user to re-auth
-// with Figma and call this route again.
+// DB side (schema builder tables, or an agent-pushed snapshot) is already
+// durable before the user ever clicks this button, so if the Figma token
+// has expired mid-flow here, nothing is lost — the client just needs the
+// user to re-auth with Figma and call this route again.
 export async function POST() {
   const session = await auth();
   const userId = session?.user?.id;
@@ -28,12 +28,12 @@ export async function POST() {
     );
   }
 
-  const dbSnapshot = await getLatestSnapshot(userId, "mysql");
-  if (!dbSnapshot) {
+  const dbColumns = await getDbColumns(userId);
+  if (!dbColumns) {
     return NextResponse.json(
       {
-        error: "no_db_snapshot",
-        message: "No database schema received yet — run planoo-agent against your database first.",
+        error: "no_db_schema",
+        message: "Henüz bir veritabanı şeması yok — önce şema oluşturucudan en az bir tablo ekle.",
       },
       { status: 400 },
     );
@@ -60,7 +60,6 @@ export async function POST() {
   const figmaNodes = await fetchFigmaFileNodes(user.figmaFileKey, accessToken);
   const figmaSnapshot = await createSnapshot(userId, "figma", figmaNodes);
 
-  const dbColumns = (dbSnapshot.payload as { columns: DbColumn[] }).columns;
   await runMatcher(userId, figmaSnapshot.id, figmaNodes, dbColumns);
 
   const links = await prisma.link.findMany({

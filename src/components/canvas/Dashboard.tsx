@@ -4,7 +4,7 @@ import { useState } from "react";
 import { LinkCanvas } from "./LinkCanvas";
 import { LinkReviewPanel } from "./LinkReviewPanel";
 import { FigmaFileConnect } from "./FigmaFileConnect";
-import { AgentSetup } from "./AgentSetup";
+import { SchemaBuilder, type DesignedTable } from "./SchemaBuilder";
 import type { LinkView } from "./types";
 import type { PlanTier } from "@prisma/client";
 
@@ -13,8 +13,7 @@ interface DashboardProps {
   plan: PlanTier;
   hasFigmaAccount: boolean;
   figmaFileKey: string | null;
-  hasDbSnapshot: boolean;
-  hasAgentKey: boolean;
+  initialDesignedTables: DesignedTable[];
   initialLinks: LinkView[];
   onSignOut: () => Promise<void>;
 }
@@ -36,17 +35,17 @@ export function Dashboard({
   plan,
   hasFigmaAccount,
   figmaFileKey,
-  hasDbSnapshot,
-  hasAgentKey,
+  initialDesignedTables,
   initialLinks,
   onSignOut,
 }: DashboardProps) {
   const [fileKey, setFileKey] = useState(figmaFileKey);
+  const [hasSchema, setHasSchema] = useState(initialDesignedTables.length > 0);
   const [links, setLinks] = useState(initialLinks);
   const [status, setStatus] = useState<RecheckStatus>({ kind: "idle" });
   const [pendingLinkIds, setPendingLinkIds] = useState<Set<string>>(new Set());
 
-  const setupComplete = hasFigmaAccount && fileKey !== null && hasDbSnapshot;
+  const setupComplete = hasFigmaAccount && fileKey !== null && hasSchema;
 
   async function handleRecheck() {
     setStatus({ kind: "loading" });
@@ -120,9 +119,10 @@ export function Dashboard({
         <SetupSteps
           hasFigmaAccount={hasFigmaAccount}
           fileKey={fileKey}
-          hasDbSnapshot={hasDbSnapshot}
-          hasAgentKey={hasAgentKey}
+          hasSchema={hasSchema}
+          initialDesignedTables={initialDesignedTables}
           onFigmaFileConnected={setFileKey}
+          onSchemaChanged={setHasSchema}
         />
       ) : (
         <>
@@ -161,7 +161,8 @@ function UpgradeBanner() {
   return (
     <div className="glass-panel flex items-center justify-between border-violet-400/30! bg-linear-to-r! from-violet-500/15! to-fuchsia-500/10! px-5 py-3.5 text-sm">
       <span className="text-violet-200">
-        Ücretsiz plandasın — sınırsız proje ve şemadan koda export (SQL/Prisma/TypeORM) için Solo&apos;ya geç.
+        Ücretsiz plandasın — sınırsız proje ve şemadan koda export (Prisma, TypeORM) için Solo&apos;ya
+        geç.
       </span>
       <a
         href="/api/lemonsqueezy/checkout?plan=solo"
@@ -176,15 +177,17 @@ function UpgradeBanner() {
 function SetupSteps({
   hasFigmaAccount,
   fileKey,
-  hasDbSnapshot,
-  hasAgentKey,
+  hasSchema,
+  initialDesignedTables,
   onFigmaFileConnected,
+  onSchemaChanged,
 }: {
   hasFigmaAccount: boolean;
   fileKey: string | null;
-  hasDbSnapshot: boolean;
-  hasAgentKey: boolean;
+  hasSchema: boolean;
+  initialDesignedTables: DesignedTable[];
   onFigmaFileConnected: (key: string) => void;
+  onSchemaChanged: (hasAtLeastOneTable: boolean) => void;
 }) {
   return (
     <div className="glass-panel flex flex-col gap-6 p-6">
@@ -213,24 +216,11 @@ function SetupSteps({
         )}
       </Step>
 
-      <Step done={hasDbSnapshot} title="3. planoo-agent'ı veritabanına karşı çalıştır">
-        {hasDbSnapshot ? (
-          <p className="text-sm text-zinc-400">Veritabanı şeması alındı.</p>
+      <Step done={hasSchema} title="3. Veritabanı şemanı oluştur">
+        {!hasFigmaAccount || fileKey === null ? (
+          <p className="text-sm text-zinc-500">Önce yukarıdaki adımları tamamla.</p>
         ) : (
-          <div className="flex flex-col gap-2">
-            {/* Always rendered, even if hasAgentKey is already true — the
-                raw key is shown exactly once and is easy to lose (page
-                refresh, closed tab). Without this, a lost key had no
-                recovery path: hasAgentKey stays true forever once any key
-                exists, so gating AgentSetup on !hasAgentKey was a dead end. */}
-            {hasAgentKey && (
-              <p className="text-sm text-zinc-400">
-                Daha önce bir anahtar oluşturdun. Kaybettiysen aşağıdan yenisini oluşturabilirsin
-                (eskisi geçersiz kalmaz).
-              </p>
-            )}
-            <AgentSetup />
-          </div>
+          <SchemaBuilder initialTables={initialDesignedTables} onSchemaChanged={onSchemaChanged} />
         )}
       </Step>
     </div>
