@@ -3,6 +3,16 @@
 Items deferred during `/plan-ceo-review` (SCOPE REDUCTION mode) on 2026-07-18.
 See design doc: `~/.gstack/projects/HIMURAw-planoo/zamto-main-design-20260718-141641.md`
 
+## P3 — `npm audit` transitive dev-dependency warnings
+**What:** `npm audit` reports 6 moderate advisories, both transitive: `@prisma/dev`'s bundled `@hono/node-server` (Prisma's local dev-database tooling) and Next.js's internally-bundled `postcss` copy (separate from our own `tailwindcss`/`postcss` deps, which are unaffected).
+**Why:** `npm audit fix --force` would downgrade to `prisma@6.19.3` and `next@9.3.3` — both drastically older majors that would break the Prisma 7 config (`prisma.config.ts`, driver adapters) and Next 16 code (async params, etc.) this project is built on. Not a safe auto-fix.
+**Pros:** N/A — this is a "watch and wait" item.
+**Cons:** N/A.
+**Context:** Re-run `npm audit` after routine `npm update`s — these should clear on their own once upstream Prisma/Next patch releases land, without needing a major-version downgrade.
+**Effort:** N/A (monitoring only)
+**Priority:** P3
+**Depends on / blocked by:** Upstream Prisma/Next.js patch releases.
+
 ## P1 — Figma OAuth app review başvurusu
 **What:** Figma'nın OAuth app review/onay sürecine şimdiden başvur.
 **Why:** Dış bağımlılık, onay süresi build takvimini etkileyebilir — outside voice review'ın yakaladığı gizli risk. Build'i beklemeden şimdi başlatılmalı.
