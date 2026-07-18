@@ -21,7 +21,10 @@ export interface DesignedTable {
 
 interface SchemaBuilderProps {
   initialTables: DesignedTable[];
-  onSchemaChanged: (hasAtLeastOneTable: boolean) => void;
+  // Fires with whether there's at least one COLUMN anywhere, not just one
+  // table — a table with zero columns gives /api/recheck nothing to match
+  // against (real bug found live: an empty table marked setup "done").
+  onSchemaChanged: (hasAtLeastOneColumn: boolean) => void;
 }
 
 // The default, friction-free way to get a DB schema into planoo — replaces
@@ -38,7 +41,7 @@ export function SchemaBuilder({ initialTables, onSchemaChanged }: SchemaBuilderP
 
   function notify(next: DesignedTable[]) {
     setTables(next);
-    onSchemaChanged(next.length > 0);
+    onSchemaChanged(next.some((t) => t.columns.length > 0));
   }
 
   async function handleAddTable(e: React.FormEvent) {
@@ -158,6 +161,12 @@ function TableCard({
           Sil
         </button>
       </div>
+
+      {table.columns.length === 0 && (
+        <p className="mt-2 text-xs text-amber-400">
+          Bu tabloda henüz kolon yok — eşleştirme için en az bir tane ekle.
+        </p>
+      )}
 
       {table.columns.length > 0 && (
         <ul className="mt-3 flex flex-col gap-1">

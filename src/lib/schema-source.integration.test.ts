@@ -85,6 +85,19 @@ describe.runIf(hasDatabase)("schema builder (integration, real DB)", () => {
     await prisma.designedTable.deleteMany({ where: { userId, name: "dupe" } });
   });
 
+  it("treats a table with zero columns as NOT a valid schema source (regression: this shipped as a real bug)", async () => {
+    // Live bug report: a user created a table but never added a column.
+    // hasSchema/setup-step logic (and, before this fix, getDbColumns
+    // itself) treated the table's mere existence as "schema ready",
+    // so /api/recheck ran the matcher against zero DB columns and
+    // silently produced zero links no matter how good the Figma side was.
+    const emptyTable = await prisma.designedTable.create({ data: { userId, name: "empty" } });
+
+    expect(await getDbColumns(userId)).toBeNull();
+
+    await prisma.designedTable.delete({ where: { id: emptyTable.id } });
+  });
+
   it("falls back to an agent-pushed snapshot when no designed tables exist", async () => {
     const { createSnapshot } = await import("./snapshot");
     await createSnapshot(userId, "mysql", {

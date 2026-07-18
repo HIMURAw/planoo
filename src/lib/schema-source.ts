@@ -15,10 +15,17 @@ export async function getDbColumns(userId: string): Promise<DbColumn[] | null> {
     include: { columns: true },
   });
 
-  if (designedTables.length > 0) {
-    return designedTables.flatMap((table) =>
-      table.columns.map((col) => ({ table: table.name, column: col.name, dataType: col.dataType })),
-    );
+  const designedColumns = designedTables.flatMap((table) =>
+    table.columns.map((col) => ({ table: table.name, column: col.name, dataType: col.dataType })),
+  );
+
+  // A table that exists but has zero columns (a real thing that happened —
+  // caught from a live report where "hasSchema" was true because a table
+  // existed, but /api/recheck silently matched against nothing) must NOT
+  // count as "schema ready". Fall through to the agent-snapshot check, and
+  // ultimately to the null branch below, same as having no tables at all.
+  if (designedColumns.length > 0) {
+    return designedColumns;
   }
 
   const agentSnapshot = await getLatestSnapshot(userId, "mysql");

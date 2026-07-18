@@ -40,7 +40,11 @@ export function Dashboard({
   onSignOut,
 }: DashboardProps) {
   const [fileKey, setFileKey] = useState(figmaFileKey);
-  const [hasSchema, setHasSchema] = useState(initialDesignedTables.length > 0);
+  // A table existing is NOT enough — it needs at least one column, or
+  // /api/recheck has nothing to match against (real bug: a table with zero
+  // columns silently marked this step "done" and produced zero links no
+  // matter how good the Figma side was).
+  const [hasSchema, setHasSchema] = useState(initialDesignedTables.some((t) => t.columns.length > 0));
   const [links, setLinks] = useState(initialLinks);
   const [status, setStatus] = useState<RecheckStatus>({ kind: "idle" });
   const [pendingLinkIds, setPendingLinkIds] = useState<Set<string>>(new Set());
