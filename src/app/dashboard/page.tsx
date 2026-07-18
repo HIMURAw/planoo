@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { Dashboard } from "@/components/canvas/Dashboard";
+import { DashboardClient } from "@/components/dashboard/DashboardClient";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -10,13 +10,20 @@ export default async function DashboardPage() {
     redirect("/");
   }
 
-  const [user, links, designedTables, figmaAccount] = await Promise.all([
+  const [user, projects, figmaAccount] = await Promise.all([
     prisma.user.findUnique({ where: { id: session.user.id } }),
-    prisma.link.findMany({ where: { userId: session.user.id }, orderBy: { updatedAt: "desc" } }),
-    prisma.designedTable.findMany({
+    prisma.project.findMany({
       where: { userId: session.user.id },
-      include: { columns: { orderBy: { order: "asc" } } },
-      orderBy: { createdAt: "asc" },
+      include: {
+        _count: {
+          select: {
+            designedTables: true,
+            links: true,
+            roadmapItems: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: "desc" },
     }),
     prisma.account.findFirst({ where: { userId: session.user.id, provider: "figma" } }),
   ]);
@@ -27,20 +34,12 @@ export default async function DashboardPage() {
   }
 
   return (
-    <Dashboard
+    <DashboardClient
       userName={session.user.name ?? "there"}
+      userImage={session.user.image ?? null}
       plan={user?.plan ?? "free"}
       hasFigmaAccount={figmaAccount !== null}
-      figmaFileKey={user?.figmaFileKey ?? null}
-      initialDesignedTables={designedTables}
-      initialLinks={links.map((l) => ({
-        id: l.id,
-        figmaNodeId: l.figmaNodeId,
-        dbTableName: l.dbTableName,
-        dbColumnName: l.dbColumnName,
-        confidence: l.confidence,
-        state: l.state,
-      }))}
+      initialProjects={projects}
       onSignOut={handleSignOut}
     />
   );

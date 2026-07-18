@@ -35,6 +35,7 @@ model User {
   agentApiKeys    AgentApiKey[]
   subscription    Subscription?
   designedTables  DesignedTable[]
+  projects        Project[]
 }
 
 model Account {
@@ -129,6 +130,7 @@ enum LinkState {
 model Link {
   id                 String    @id @default(cuid())
   userId             String
+  projectId          String?
   figmaNodeId        String
   dbTableName        String
   dbColumnName       String
@@ -139,6 +141,7 @@ model Link {
   updatedAt          DateTime  @updatedAt
 
   user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project          Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
   lastSeenSnapshot SchemaSnapshot? @relation(fields: [lastSeenSnapshotId], references: [id], onDelete: SetNull)
 
   @@unique([userId, figmaNodeId, dbTableName, dbColumnName])
@@ -156,11 +159,13 @@ model Link {
 model DesignedTable {
   id        String   @id @default(cuid())
   userId    String
+  projectId String?
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
   columns DesignedColumn[]
 
   @@unique([userId, name])
@@ -185,6 +190,51 @@ model DesignedColumn {
   table DesignedTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
 
   @@unique([tableId, name])
+}
+
+// --- Project & Roadmap models (dashboard restructuring) ---
+
+// A project groups together a Figma file, a DB schema (designed tables), and
+// a roadmap. This is the multi-project data model called out in TODOS.md P1.
+// For v0 of this restructure, projectId is optional on DesignedTable/Link
+// so existing data isn't broken — new projects created from the dashboard
+// always set it.
+model Project {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  description  String?  @db.Text
+  figmaFileKey String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  designedTables DesignedTable[]
+  links          Link[]
+  roadmapItems   RoadmapItem[]
+
+  @@unique([userId, name])
+}
+
+enum RoadmapStatus {
+  todo
+  in_progress
+  done
+}
+
+model RoadmapItem {
+  id          String        @id @default(cuid())
+  projectId   String
+  title       String
+  description String?       @db.Text
+  status      RoadmapStatus @default(todo)
+  order       Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
 }
 
 // Single-use key a user generates from the web UI and passes to

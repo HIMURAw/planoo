@@ -99,43 +99,53 @@ export function SchemaBuilder({ initialTables, onSchemaChanged }: SchemaBuilderP
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {error && <p className="text-sm text-red-400">{error}</p>}
+    <div className="flex flex-col gap-6">
+      {error && <p className="text-sm text-red-400 font-mono">[ERROR] {error}</p>}
 
-      {tables.map((table) => (
-        <TableCard
-          key={table.id}
-          table={table}
-          onDeleteTable={() => handleDeleteTable(table.id)}
-          onAddColumn={(col) => handleAddColumn(table.id, col)}
-          onDeleteColumn={(colId) => handleDeleteColumn(table.id, colId)}
-        />
-      ))}
-
-      <form onSubmit={handleAddTable} className="flex gap-2">
-        <input
-          value={newTableName}
-          onChange={(e) => setNewTableName(e.target.value)}
-          placeholder="ör. users, orders"
-          className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-zinc-500 focus:border-violet-400/50 focus:outline-none"
-        />
-        <button
-          type="submit"
-          disabled={creatingTable || newTableName.trim().length === 0}
-          className="shrink-0 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
-        >
-          + Tablo ekle
-        </button>
-      </form>
-
-      {tables.length > 0 && (
-        <a
-          href="/api/schema/export"
-          className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
-        >
-          .sql olarak indir
-        </a>
+      {tables.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {tables.map((table) => (
+            <TableCard
+              key={table.id}
+              table={table}
+              onDeleteTable={() => handleDeleteTable(table.id)}
+              onAddColumn={(col) => handleAddColumn(table.id, col)}
+              onDeleteColumn={(colId) => handleDeleteColumn(table.id, colId)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="border border-dashed border-blue-500/20 rounded-xl p-12 text-center bg-blue-950/5">
+          <p className="text-sm text-blue-300/60 font-mono">[SYS] TABLO BULUNAMADI. LÜTFEN İLK TABLOYU EKLEYİN.</p>
+        </div>
       )}
+
+      <div className="border-t border-blue-500/10 pt-4 flex flex-col sm:flex-row gap-4 items-center justify-between">
+        <form onSubmit={handleAddTable} className="flex gap-2 w-full max-w-md">
+          <input
+            value={newTableName}
+            onChange={(e) => setNewTableName(e.target.value)}
+            placeholder="ör. users, orders"
+            className="flex-1 rounded-lg border border-blue-500/30 bg-[#0d2240] px-3.5 py-2 text-sm text-white placeholder:text-blue-300/40 focus:border-blue-400 focus:outline-none font-mono"
+          />
+          <button
+            type="submit"
+            disabled={creatingTable || newTableName.trim().length === 0}
+            className="shrink-0 rounded-lg bg-blue-500 hover:bg-blue-400 text-white font-mono text-sm px-4 py-2 disabled:opacity-30 disabled:hover:bg-blue-500 transition-colors shadow-[0_0_10px_rgba(59,130,246,0.3)]"
+          >
+            + TABLO EKLE
+          </button>
+        </form>
+
+        {tables.length > 0 && (
+          <a
+            href="/api/schema/export"
+            className="rounded-lg border border-blue-400/30 bg-blue-950/20 px-4 py-2 text-xs font-mono text-blue-300 hover:bg-blue-900/30 transition-colors"
+          >
+            [EXPORT .SQL]
+          </a>
+        )}
+      </div>
     </div>
   );
 }
@@ -154,66 +164,77 @@ function TableCard({
   const [showAddColumn, setShowAddColumn] = useState(false);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/3 p-4">
-      <div className="flex items-center justify-between">
-        <h4 className="font-mono text-sm font-medium text-white">{table.name}</h4>
-        <button type="button" onClick={onDeleteTable} className="text-xs text-zinc-500 hover:text-red-400">
-          Sil
-        </button>
+    <div className="rounded-xl border border-blue-400/40 bg-[#081526]/90 p-4 shadow-lg flex flex-col justify-between min-h-[160px]">
+      <div>
+        <div className="flex items-center justify-between border-b border-blue-400/20 pb-2 mb-3">
+          <h4 className="font-mono text-sm font-bold text-blue-200 uppercase tracking-wide">
+            {table.name}
+          </h4>
+          <button
+            type="button"
+            onClick={onDeleteTable}
+            className="text-[10px] font-mono text-blue-400/50 hover:text-red-400 transition-colors"
+          >
+            [SİL]
+          </button>
+        </div>
+
+        {table.columns.length === 0 && (
+          <p className="text-[11px] font-mono text-amber-400/80 mb-3">
+            * Kolon tanımlanmadı.
+          </p>
+        )}
+
+        {table.columns.length > 0 && (
+          <ul className="flex flex-col gap-1.5 mb-4">
+            {table.columns.map((col) => (
+              <li
+                key={col.id}
+                className="flex items-center justify-between rounded bg-[#0d2240]/40 border border-blue-500/10 px-2 py-1 text-[11px] text-blue-200"
+              >
+                <span className="font-mono flex items-center gap-1.5">
+                  {col.isPrimaryKey && (
+                    <span className="text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40 px-1 rounded">PK</span>
+                  )}
+                  {col.isForeignKey && (
+                    <span className="text-[9px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/40 px-1 rounded">FK</span>
+                  )}
+                  <span className="font-bold text-white">{col.name}</span>
+                  <span className="text-blue-400/60 font-medium">{col.dataType}</span>
+                  {!col.nullable && <span className="text-[9px] text-blue-400/30">NN</span>}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onDeleteColumn(col.id)}
+                  className="text-blue-500/30 hover:text-red-400 font-mono transition-colors text-[10px] ml-2"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
-      {table.columns.length === 0 && (
-        <p className="mt-2 text-xs text-amber-400">
-          Bu tabloda henüz kolon yok — eşleştirme için en az bir tane ekle.
-        </p>
-      )}
-
-      {table.columns.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-1">
-          {table.columns.map((col) => (
-            <li
-              key={col.id}
-              className="flex items-center justify-between rounded-md bg-white/5 px-3 py-1.5 text-xs text-zinc-300"
-            >
-              <span className="font-mono">
-                {col.name} <span className="text-zinc-500">{col.dataType}</span>
-                {col.isPrimaryKey && <span className="ml-1 text-amber-400">PK</span>}
-                {col.isForeignKey && (
-                  <span className="ml-1 text-blue-400">
-                    FK → {col.referencesTable}.{col.referencesColumn}
-                  </span>
-                )}
-                {!col.nullable && <span className="ml-1 text-zinc-500">NOT NULL</span>}
-              </span>
-              <button
-                type="button"
-                onClick={() => onDeleteColumn(col.id)}
-                className="text-zinc-500 hover:text-red-400"
-              >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {showAddColumn ? (
-        <AddColumnForm
-          onSubmit={(col) => {
-            onAddColumn(col);
-            setShowAddColumn(false);
-          }}
-          onCancel={() => setShowAddColumn(false)}
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowAddColumn(true)}
-          className="mt-3 text-xs text-violet-300 hover:text-violet-200"
-        >
-          + Kolon ekle
-        </button>
-      )}
+      <div>
+        {showAddColumn ? (
+          <AddColumnForm
+            onSubmit={(col) => {
+              onAddColumn(col);
+              setShowAddColumn(false);
+            }}
+            onCancel={() => setShowAddColumn(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowAddColumn(true)}
+            className="text-[11px] font-mono text-blue-400 hover:text-blue-200 transition-colors uppercase"
+          >
+            [+ Kolon Ekle]
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -249,34 +270,38 @@ function AddColumnForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-3 flex flex-wrap items-center gap-2">
+    <form onSubmit={handleSubmit} className="flex flex-wrap items-center gap-2 border-t border-blue-400/10 pt-2.5 mt-2">
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="kolon adı"
-        className="w-32 rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-white placeholder:text-zinc-500 focus:border-violet-400/50 focus:outline-none"
+        placeholder="ad"
+        className="w-24 rounded bg-[#0d2240] border border-blue-500/30 px-2 py-0.5 text-[11px] text-white focus:outline-none focus:border-blue-400 font-mono"
         autoFocus
       />
       <input
         value={dataType}
         onChange={(e) => setDataType(e.target.value)}
         placeholder="tip"
-        className="w-28 rounded-md border border-white/15 bg-white/5 px-2 py-1 text-xs text-white placeholder:text-zinc-500 focus:border-violet-400/50 focus:outline-none"
+        className="w-20 rounded bg-[#0d2240] border border-blue-500/30 px-2 py-0.5 text-[11px] text-white focus:outline-none focus:border-blue-400 font-mono"
       />
-      <label className="flex items-center gap-1 text-xs text-zinc-400">
-        <input type="checkbox" checked={!nullable} onChange={(e) => setNullable(!e.target.checked)} />
-        NOT NULL
-      </label>
-      <label className="flex items-center gap-1 text-xs text-zinc-400">
-        <input type="checkbox" checked={isPrimaryKey} onChange={(e) => setIsPrimaryKey(e.target.checked)} />
-        PK
-      </label>
-      <button type="submit" className="rounded-md bg-white px-2.5 py-1 text-xs font-medium text-black">
-        Ekle
-      </button>
-      <button type="button" onClick={onCancel} className="text-xs text-zinc-500 hover:text-zinc-300">
-        İptal
-      </button>
+      <div className="flex gap-2">
+        <label className="flex items-center gap-1 text-[9px] font-mono text-blue-400/70 select-none cursor-pointer">
+          <input type="checkbox" checked={!nullable} onChange={(e) => setNullable(!e.target.checked)} className="accent-blue-500 scale-90" />
+          NN
+        </label>
+        <label className="flex items-center gap-1 text-[9px] font-mono text-blue-400/70 select-none cursor-pointer">
+          <input type="checkbox" checked={isPrimaryKey} onChange={(e) => setIsPrimaryKey(e.target.checked)} className="accent-blue-500 scale-90" />
+          PK
+        </label>
+      </div>
+      <div className="flex gap-1.5 ml-auto">
+        <button type="submit" className="rounded bg-blue-500 hover:bg-blue-400 text-white font-mono px-2 py-0.5 text-[10px]">
+          EKLE
+        </button>
+        <button type="button" onClick={onCancel} className="text-[10px] font-mono text-blue-400/50 hover:text-blue-200">
+          İPTAL
+        </button>
+      </div>
     </form>
   );
 }
