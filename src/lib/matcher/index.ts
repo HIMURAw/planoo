@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { generateMatchCandidates } from "./heuristic";
+import { tokenize, jaccardSimilarity } from "./normalize";
 import { CONFIDENCE_THRESHOLD } from "./types";
 import type { DbColumn, FigmaNode } from "./types";
 
@@ -142,30 +143,24 @@ async function reconcileConfirmedLinks(
   }
 }
 
+// Token-based (not character-based) similarity, matching the main matcher's
+// approach in heuristic.ts — character-level Jaccard was tried first and
+// failed on the exact case this exists for: "email" -> "email_address"
+// scores only ~0.56 on shared characters (both names share e/m/a/i/l, but
+// "address" dilutes the character set), landing below any sane threshold.
+// Token overlap catches this because "email" is literally one of the tokens
+// in "email_address".
 function findRenameCandidate(oldColumnName: string, currentColumns: DbColumn[]): DbColumn | null {
-  const oldLower = oldColumnName.toLowerCase();
+  const oldTokens = tokenize(oldColumnName);
   let best: { col: DbColumn; score: number } | null = null;
 
   for (const col of currentColumns) {
-    const colLower = col.column.toLowerCase();
-    if (colLower === oldLower) continue; // still exists, not a rename case
-    const score = similarity(oldLower, colLower);
-    if (score > 0.6 && score > (best?.score ?? 0)) {
+    if (col.column.toLowerCase() === oldColumnName.toLowerCase()) continue; // still exists, not a rename case
+    const score = jaccardSimilarity(oldTokens, tokenize(col.column));
+    if (score > 0.3 && score > (best?.score ?? 0)) {
       best = { col, score };
     }
   }
 
   return best?.col ?? null;
-}
-
-// Simple normalized-overlap similarity for two short identifiers — enough to
-// tell "user_email" apart from "email_address" without pulling in a full
-// edit-distance library for this narrow, low-stakes use.
-function similarity(a: string, b: string): number {
-  const setA = new Set(a.split(""));
-  const setB = new Set(b.split(""));
-  let intersection = 0;
-  for (const ch of setA) if (setB.has(ch)) intersection += 1;
-  const union = new Set([...setA, ...setB]).size;
-  return union === 0 ? 0 : intersection / union;
 }

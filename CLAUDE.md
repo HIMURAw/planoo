@@ -25,6 +25,8 @@ npm run prisma:migrate          # create/apply a dev migration
 
 **Single test file:** `npx vitest run src/lib/matcher/heuristic.test.ts` · **Single Playwright test:** `npx playwright test tests/e2e/homepage.spec.ts`
 
+`src/lib/matcher/index.integration.test.ts` runs against a real MySQL/MariaDB (via `DATABASE_URL`) instead of mocks — it self-skips (`describe.runIf`) when `DATABASE_URL` isn't set, so it's safe in `npm run test` everywhere but only exercises anything where a DB is reachable. This is what caught a real bug during the initial build: `findRenameCandidate`'s first version used character-level similarity and failed to detect "email" -> "email_address" as a rename.
+
 Required env vars are documented in `.env.example` — copy to `.env` for local dev (`DATABASE_URL`, `AUTH_SECRET`, `FIGMA_CLIENT_ID`/`FIGMA_CLIENT_SECRET`, `SNAPSHOT_ENCRYPTION_KEY`). `scripts/agent.ts` reads a separate set (`PLANOO_API_KEY`, `AGENT_DATABASE_URL`) — those belong on a *customer's* machine, never in this repo's own `.env`.
 
 ## Architecture
