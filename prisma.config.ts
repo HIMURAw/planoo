@@ -8,11 +8,21 @@
 // automatically. This file has to do it explicitly, or `prisma migrate`/
 // `prisma studio` fail with "Cannot resolve environment variable".
 import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+import { defineConfig } from "prisma/config";
 
+// Deliberately `process.env.DATABASE_URL` (undefined-safe), NOT prisma/
+// config's `env()` helper, which throws synchronously the moment this file
+// is evaluated if the var is missing. That breaks `prisma generate` — which
+// doesn't need a real DB connection, just the schema — for anyone (CI, a
+// fresh clone, `npm run build` in an environment with no secrets yet) who
+// runs it before `.env` exists. `prisma migrate`/`studio` still fail
+// loudly and correctly at actual connection time if this is undefined —
+// only `generate` needed to be resilient here. (Found by an actual "why
+// is prisma generate crashing" report after predev/prebuild started
+// running it unconditionally — this file's env() call was the culprit.)
 export default defineConfig({
   schema: "prisma/schema.prisma",
   datasource: {
-    url: env("DATABASE_URL"),
+    url: process.env.DATABASE_URL,
   },
 });

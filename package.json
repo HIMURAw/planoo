@@ -6,9 +6,10 @@
     "node": ">=20.9.0"
   },
   "scripts": {
-    "predev": "node scripts/build-agent.mjs",
+    "postinstall": "prisma generate",
+    "predev": "prisma generate && node scripts/build-agent.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/build-agent.mjs",
+    "prebuild": "prisma generate && node scripts/build-agent.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

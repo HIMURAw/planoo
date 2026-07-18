@@ -51,6 +51,8 @@ Three independently-deployable pieces, one monorepo:
 
 **Prisma 7 note:** the connection URL is *not* in `schema.prisma` (removed in Prisma 7) — it's supplied via the `@prisma/adapter-mariadb` driver adapter in `src/lib/prisma.ts` (there is no separate `@prisma/adapter-mysql` package; MariaDB's adapter is Prisma's supported MySQL path) and via `prisma.config.ts` for the CLI (`prisma migrate`/`prisma studio`).
 
+**After pulling a commit that touches `prisma/schema.prisma`, run `npx prisma migrate dev`** — it applies any new migration AND regenerates the Prisma Client in one step. `predev`/`prebuild` also run `prisma generate` automatically now (so a stale client after `git pull` fails loudly at build/dev-start instead of a confusing runtime `Cannot read properties of undefined (reading 'findMany')` crash — that's the actual bug this note exists to prevent a repeat of), but generating the client is not the same as applying migrations to your database; a table that doesn't exist yet will still 500 until you run `migrate dev`.
+
 **Next.js 16 note:** this project was scaffolded on Next.js 16, which has real breaking changes from what most training data assumes — `cookies()`, `headers()`, route `params`, and `searchParams` are all `Promise`s that must be `await`ed (see `src/app/api/links/[id]/route.ts` for the async-params pattern). `middleware.ts` is renamed `proxy.ts` if one gets added. See `AGENTS.md` and `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md` before assuming an older Next.js API.
 
 ## CI
