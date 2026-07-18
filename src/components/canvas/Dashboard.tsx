@@ -214,14 +214,23 @@ function SetupSteps({
       </Step>
 
       <Step done={hasDbSnapshot} title="3. planoo-agent'ı veritabanına karşı çalıştır">
-        {!hasAgentKey ? (
-          <AgentSetup />
-        ) : hasDbSnapshot ? (
+        {hasDbSnapshot ? (
           <p className="text-sm text-zinc-400">Veritabanı şeması alındı.</p>
         ) : (
-          <p className="text-sm text-zinc-400">
-            Anahtar oluşturuldu, agent&apos;ın çalıştırılması bekleniyor. Sayfayı yenile.
-          </p>
+          <div className="flex flex-col gap-2">
+            {/* Always rendered, even if hasAgentKey is already true — the
+                raw key is shown exactly once and is easy to lose (page
+                refresh, closed tab). Without this, a lost key had no
+                recovery path: hasAgentKey stays true forever once any key
+                exists, so gating AgentSetup on !hasAgentKey was a dead end. */}
+            {hasAgentKey && (
+              <p className="text-sm text-zinc-400">
+                Daha önce bir anahtar oluşturdun. Kaybettiysen aşağıdan yenisini oluşturabilirsin
+                (eskisi geçersiz kalmaz).
+              </p>
+            )}
+            <AgentSetup />
+          </div>
         )}
       </Step>
     </div>
