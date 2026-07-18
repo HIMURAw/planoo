@@ -3,6 +3,16 @@
 Items deferred during `/plan-ceo-review` (SCOPE REDUCTION mode) on 2026-07-18.
 See design doc: `~/.gstack/projects/HIMURAw-planoo/zamto-main-design-20260718-141641.md`
 
+## P1 — Multi-project data model (needed to actually enforce plan limits)
+**What:** The landing page advertises "Free: 1 aktif proje, 10 tablo çizimi" vs. "Solo/Team: sınırsız proje" — but the whole app is still single-Figma-file/single-DB-schema per account (`User.figmaFileKey` is one field, not a list). There is currently NO code enforcing these limits; every signed-in user, regardless of `plan`, has the same one-project capacity.
+**Why:** Pricing copy and billing (Lemon Squeezy checkout + webhook, `User.plan`) were built per explicit instruction, but building the actual multi-project data model (and the UI to manage multiple projects) is a materially bigger scope than "set up payment infra" — it touches `SchemaSnapshot`, `Link`, `AgentApiKey`, and most of the dashboard UI. Flagging rather than silently expanding scope to build it unasked, consistent with the SCOPE REDUCTION discipline this project started with.
+**Pros:** Once built, the pricing tiers become real product gates instead of just marketing copy.
+**Cons:** Meaningful schema migration (Project model, everything keyed by projectId instead of userId) + UI for project switching.
+**Context:** Until this lands, `plan` only gates the Lemon Squeezy billing relationship itself (what the user is charged) — it doesn't yet gate any in-app capability. Decide the Project model shape before starting: does a Project own one Figma file + one DB connection (current 1:1:1 assumption generalized), or something looser?
+**Effort:** L (human: ~1-2 weeks) → CC: ~2-3 days
+**Priority:** P1
+**Depends on / blocked by:** Nothing — but should land before actively selling the paid plans, since right now nothing differentiates them functionally.
+
 ## P3 — `npm audit` transitive dev-dependency warnings
 **What:** `npm audit` reports 6 moderate advisories, both transitive: `@prisma/dev`'s bundled `@hono/node-server` (Prisma's local dev-database tooling) and Next.js's internally-bundled `postcss` copy (separate from our own `tailwindcss`/`postcss` deps, which are unaffected).
 **Why:** `npm audit fix --force` would downgrade to `prisma@6.19.3` and `next@9.3.3` — both drastically older majors that would break the Prisma 7 config (`prisma.config.ts`, driver adapters) and Next 16 code (async params, etc.) this project is built on. Not a safe auto-fix.

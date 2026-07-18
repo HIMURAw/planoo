@@ -1,81 +1,33 @@
 import NextAuth from "next-auth";
-import type { OAuthConfig } from "next-auth/providers";
+import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 
-// Figma has no official Auth.js provider — this is a hand-rolled OAuth2
-// config (decided in /plan-eng-review: Auth.js's automatic token refresh
-// only works for its first-party providers, so refreshAccessToken below is
-// implemented manually in the jwt callback).
-// Docs: https://www.figma.com/developers/api#oauth2
-
-interface FigmaProfile {
-  id: string;
-  email: string;
-  handle: string;
-  img_url: string;
-}
-
-function FigmaProvider(): OAuthConfig<FigmaProfile> {
-  return {
-    id: "figma",
-    name: "Figma",
-    type: "oauth",
-    authorization: {
-      url: "https://www.figma.com/oauth",
-      params: { scope: "file_read", response_type: "code" },
-    },
-    token: "https://api.figma.com/v1/oauth/token",
-    userinfo: "https://api.figma.com/v1/me",
-    clientId: process.env.FIGMA_CLIENT_ID,
-    clientSecret: process.env.FIGMA_CLIENT_SECRET,
-    profile(profile) {
-      return {
-        id: profile.id,
-        name: profile.handle,
-        email: profile.email,
-        image: profile.img_url,
-      };
-    },
-  };
-}
-
-// Refreshes an expired Figma access token using the stored refresh token.
-// Called from the jwt callback below when the current token is past its
-// expiry. Figma's refresh endpoint: POST /v1/oauth/refresh.
-async function refreshFigmaAccessToken(refreshToken: string) {
-  const basicAuth = Buffer.from(
-    `${process.env.FIGMA_CLIENT_ID}:${process.env.FIGMA_CLIENT_SECRET}`,
-  ).toString("base64");
-
-  const response = await fetch("https://api.figma.com/v1/oauth/refresh", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${basicAuth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ refresh_token: refreshToken }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Figma token refresh failed: ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    access_token: string;
-    expires_in: number;
-  };
-
-  return {
-    access_token: data.access_token,
-    // Figma refresh does not rotate the refresh token itself.
-    expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
-  };
-}
-
+// Google is the ONLY sign-in/account-creation provider. Figma is
+// deliberately NOT an Auth.js `provider` here — it's a per-user integration
+// connected *after* sign-in (see src/app/api/figma/connect/route.ts), not a
+// login method. Two reasons this is cleaner than registering Figma as a
+// second Auth.js provider and relying on its account-linking behavior:
+//   1. Auth.js only auto-links a second OAuth provider to an existing user
+//      when the email matches (`allowDangerousEmailAccountLinking`) — a
+//      user's Figma email and Google email are not guaranteed to match.
+//   2. The connect flow explicitly attaches the Figma tokens to
+//      `session.user.id` (whoever is signed in right now), which is exactly
+//      what "connect your Figma account" should mean, with no ambiguity
+//      about whether it's creating a new user or linking to the current one.
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  providers: [FigmaProvider()],
+  // Called explicitly (not just `providers: [Google]`) so the env var names
+  // are GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET, matching .env.example and the
+  // FIGMA_CLIENT_ID/SECRET naming used for the hand-rolled Figma flow —
+  // rather than Auth.js's own `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET`
+  // auto-inference convention, which would be inconsistent with that.
+  providers: [
+    Google({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    }),
+  ],
   session: { strategy: "database" },
   callbacks: {
     async session({ session, user }) {
@@ -85,15 +37,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
-  // NOTE: with the "database" session strategy, Account.access_token /
-  // expires_at are read directly from Prisma at call time (see
-  // lib/figma-client.ts), not carried in a JWT — refreshFigmaAccessToken is
-  // invoked there, on-demand, right before a Figma API call whose token is
-  // expired. This function is exported so that call site can use it.
-  //
-  // See Addendum in the design doc: this is the deliberate fix for the
-  // "Auth.js refresh isn't automatic for custom providers" gap outside
-  // voice found — refresh is explicit, not assumed.
 });
-
-export { refreshFigmaAccessToken };

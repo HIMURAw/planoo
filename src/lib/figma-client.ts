@@ -1,5 +1,41 @@
 import { prisma } from "@/lib/prisma";
-import { refreshFigmaAccessToken } from "@/auth";
+
+// Figma has no official Auth.js provider and (since /plan-ceo-review's
+// Google-login restructuring) isn't an Auth.js `provider` at all anymore —
+// it's connected separately via src/app/api/figma/connect + callback, which
+// write directly to the same Account table Auth.js's Google provider uses.
+// Refresh has to be manual either way (Auth.js's automatic refresh only
+// covers first-party providers), so this lives here rather than in auth.ts.
+// Docs: https://www.figma.com/developers/api#oauth2
+export async function refreshFigmaAccessToken(refreshToken: string) {
+  const basicAuth = Buffer.from(
+    `${process.env.FIGMA_CLIENT_ID}:${process.env.FIGMA_CLIENT_SECRET}`,
+  ).toString("base64");
+
+  const response = await fetch("https://api.figma.com/v1/oauth/refresh", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basicAuth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({ refresh_token: refreshToken }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Figma token refresh failed: ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    access_token: string;
+    expires_in: number;
+  };
+
+  return {
+    access_token: data.access_token,
+    // Figma refresh does not rotate the refresh token itself.
+    expires_at: Math.floor(Date.now() / 1000) + data.expires_in,
+  };
+}
 
 // Thrown when the Figma refresh token itself is invalid/revoked (not just an
 // expired access token). Callers catch this specifically to move the

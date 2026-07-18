@@ -6,9 +6,12 @@ import { LinkReviewPanel } from "./LinkReviewPanel";
 import { FigmaFileConnect } from "./FigmaFileConnect";
 import { AgentSetup } from "./AgentSetup";
 import type { LinkView } from "./types";
+import type { PlanTier } from "@prisma/client";
 
 interface DashboardProps {
   userName: string;
+  plan: PlanTier;
+  hasFigmaAccount: boolean;
   figmaFileKey: string | null;
   hasDbSnapshot: boolean;
   hasAgentKey: boolean;
@@ -22,8 +25,16 @@ type RecheckStatus =
   | { kind: "error"; code: string; message: string }
   | { kind: "success"; isFirstRun: boolean };
 
+const PLAN_LABEL: Record<PlanTier, string> = {
+  free: "Ücretsiz",
+  solo: "Solo Developer",
+  team: "Team / Agency",
+};
+
 export function Dashboard({
   userName,
+  plan,
+  hasFigmaAccount,
   figmaFileKey,
   hasDbSnapshot,
   hasAgentKey,
@@ -35,7 +46,7 @@ export function Dashboard({
   const [status, setStatus] = useState<RecheckStatus>({ kind: "idle" });
   const [pendingLinkIds, setPendingLinkIds] = useState<Set<string>>(new Set());
 
-  const setupComplete = fileKey !== null && hasDbSnapshot;
+  const setupComplete = hasFigmaAccount && fileKey !== null && hasDbSnapshot;
 
   async function handleRecheck() {
     setStatus({ kind: "loading" });
@@ -84,7 +95,12 @@ export function Dashboard({
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-8">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">planoo</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold text-black dark:text-zinc-50">planoo</h1>
+          <span className="rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs font-medium text-zinc-500 dark:border-zinc-700">
+            {PLAN_LABEL[plan]}
+          </span>
+        </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-zinc-500">Merhaba, {userName}</span>
           <form action={onSignOut}>
@@ -98,12 +114,15 @@ export function Dashboard({
         </div>
       </header>
 
+      {plan === "free" && <UpgradeBanner />}
+
       {!setupComplete ? (
         <SetupSteps
+          hasFigmaAccount={hasFigmaAccount}
           fileKey={fileKey}
           hasDbSnapshot={hasDbSnapshot}
           hasAgentKey={hasAgentKey}
-          onFigmaConnected={setFileKey}
+          onFigmaFileConnected={setFileKey}
         />
       ) : (
         <>
@@ -138,30 +157,63 @@ export function Dashboard({
   );
 }
 
+function UpgradeBanner() {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm dark:border-violet-900 dark:bg-violet-950">
+      <span className="text-violet-900 dark:text-violet-200">
+        Ücretsiz plandasın — sınırsız proje ve şemadan koda export (SQL/Prisma/TypeORM) için Solo&apos;ya geç.
+      </span>
+      <a
+        href="/api/lemonsqueezy/checkout?plan=solo"
+        className="shrink-0 rounded-full bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700"
+      >
+        Yükselt
+      </a>
+    </div>
+  );
+}
+
 function SetupSteps({
+  hasFigmaAccount,
   fileKey,
   hasDbSnapshot,
   hasAgentKey,
-  onFigmaConnected,
+  onFigmaFileConnected,
 }: {
+  hasFigmaAccount: boolean;
   fileKey: string | null;
   hasDbSnapshot: boolean;
   hasAgentKey: boolean;
-  onFigmaConnected: (key: string) => void;
+  onFigmaFileConnected: (key: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-6 rounded-lg border border-zinc-200 p-6 dark:border-zinc-800">
       <h2 className="text-lg font-medium">İlk kurulum</h2>
 
-      <Step done={fileKey !== null} title="1. Figma dosyanı bağla">
-        {fileKey === null ? (
-          <FigmaFileConnect onConnected={onFigmaConnected} />
+      <Step done={hasFigmaAccount} title="1. Figma hesabını bağla">
+        {hasFigmaAccount ? (
+          <p className="text-sm text-zinc-500">Figma hesabı bağlı.</p>
+        ) : (
+          <a
+            href="/api/figma/connect"
+            className="inline-block rounded-md bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+          >
+            Figma hesabını bağla
+          </a>
+        )}
+      </Step>
+
+      <Step done={fileKey !== null} title="2. Figma dosyanı bağla">
+        {!hasFigmaAccount ? (
+          <p className="text-sm text-zinc-400">Önce Figma hesabını bağla.</p>
+        ) : fileKey === null ? (
+          <FigmaFileConnect onConnected={onFigmaFileConnected} />
         ) : (
           <p className="text-sm text-zinc-500">Bağlı: {fileKey}</p>
         )}
       </Step>
 
-      <Step done={hasDbSnapshot} title="2. planoo-agent'ı veritabanına karşı çalıştır">
+      <Step done={hasDbSnapshot} title="3. planoo-agent'ı veritabanına karşı çalıştır">
         {!hasAgentKey ? (
           <AgentSetup />
         ) : hasDbSnapshot ? (
@@ -225,7 +277,7 @@ function StatusBanner({ status }: { status: RecheckStatus }) {
         <button
           type="button"
           onClick={() => {
-            window.location.href = "/api/auth/signin/figma";
+            window.location.href = "/api/figma/connect";
           }}
           className="underline"
         >

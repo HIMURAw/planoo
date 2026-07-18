@@ -22,12 +22,18 @@ model User {
   // a Figma file"); v0 is single-file-per-account (see design doc "NOT in
   // scope": multi-project support is deferred).
   figmaFileKey  String?
+  // Free until a Lemon Squeezy subscription (see Subscription below) says
+  // otherwise. Denormalized onto User for cheap reads everywhere access
+  // needs gating — the Subscription row is the source of truth and updates
+  // this via the Lemon Squeezy webhook handler.
+  plan          PlanTier  @default(free)
 
   accounts        Account[]
   sessions        Session[]
   schemaSnapshots SchemaSnapshot[]
   links           Link[]
   agentApiKeys    AgentApiKey[]
+  subscription    Subscription?
 }
 
 model Account {
@@ -147,6 +153,43 @@ model AgentApiKey {
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
   revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum PlanTier {
+  free
+  solo
+  team
+}
+
+enum SubscriptionStatus {
+  on_trial
+  active
+  paused
+  past_due
+  unpaid
+  cancelled
+  expired
+}
+
+// Mirrors a Lemon Squeezy subscription. One per user (v0 doesn't support a
+// user having multiple concurrent subscriptions) — created/updated/deleted
+// entirely from src/app/api/lemonsqueezy/webhook, never written by the app
+// directly. User.plan is denormalized from this row's `status`/`variantId`
+// for cheap reads; this table is the reconciliation source of truth.
+model Subscription {
+  id                         String             @id @default(cuid())
+  userId                     String             @unique
+  plan                       PlanTier
+  status                     SubscriptionStatus
+  lemonSqueezySubscriptionId String             @unique
+  lemonSqueezyCustomerId     String
+  lemonSqueezyVariantId      String
+  renewsAt                   DateTime?
+  endsAt                     DateTime?
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
