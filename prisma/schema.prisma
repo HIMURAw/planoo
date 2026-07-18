@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7: the connection URL no longer lives here — it's supplied via the
+// driver adapter passed to PrismaClient (see src/lib/prisma.ts) and to
+// Prisma Migrate via prisma.config.ts.
+datasource db {
+  provider = "mysql"
+}
+
+// --- Auth.js standard schema (@auth/prisma-adapter) ---
+// https://authjs.dev/getting-started/adapters/prisma
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  // The Figma file this account tracks. Set once from the canvas UI ("connect
+  // a Figma file"); v0 is single-file-per-account (see design doc "NOT in
+  // scope": multi-project support is deferred).
+  figmaFileKey  String?
+
+  accounts        Account[]
+  sessions        Session[]
+  schemaSnapshots SchemaSnapshot[]
+  links           Link[]
+  agentApiKeys    AgentApiKey[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// --- planoo domain models ---
+
+enum SnapshotSource {
+  figma
+  mysql
+}
+
+// A single read of either the Figma file structure or a customer's DB schema.
+// Retention: only the last 2 snapshots per (userId, source) are kept — the
+// current one and the previous one, which is all drift-detection needs.
+// Older rows are deleted by lib/snapshot.ts whenever a new one is created.
+model SchemaSnapshot {
+  id        String         @id @default(cuid())
+  userId    String
+  source    SnapshotSource
+  // Encrypted at rest (application-level encryption before write — see lib/crypto.ts).
+  // Contains the raw structure: Figma node tree or MySQL table/column list.
+  payload   String         @db.LongText
+  createdAt DateTime       @default(now())
+
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  linksLastSeenHere Link[]
+
+  @@index([userId, source, createdAt])
+}
+
+enum LinkState {
+  suggested
+  confirmed
+  stale
+  broken
+  rejected
+}
+
+// One proposed or confirmed mapping between a Figma UI element and a DB column.
+//
+// State machine:
+//   suggested  --user confirms--> confirmed
+//   suggested  --user rejects-->  rejected   (never re-suggested for the same pair)
+//   confirmed  --source renamed--> stale     (new suggestion offered, re-confirm to clear)
+//   confirmed  --source deleted--> broken    (stays until manually resolved)
+//
+// Rerun scope (decided in /plan-eng-review): re-matching on "recheck" only
+// touches links NOT in `confirmed` state. Confirmed links are never silently
+// overwritten by a new higher-confidence suggestion for the same pair.
+//
+// Deliberately belongs to the USER, not a SchemaSnapshot: SchemaSnapshot
+// retention prunes down to the last 2 rows (see lib/snapshot.ts), and a
+// `confirmed` Link must survive that pruning — it's the whole point of the
+// state machine. `lastSeenSnapshotId` is informational only (onDelete:
+// SetNull), never something a Link's existence depends on.
+model Link {
+  id                 String    @id @default(cuid())
+  userId             String
+  figmaNodeId        String
+  dbTableName        String
+  dbColumnName       String
+  confidence         Float
+  state              LinkState @default(suggested)
+  lastSeenSnapshotId String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastSeenSnapshot SchemaSnapshot? @relation(fields: [lastSeenSnapshotId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, figmaNodeId, dbTableName, dbColumnName])
+  @@index([userId, state])
+}
+
+// Single-use key a user generates from the web UI and passes to
+// `scripts/agent.ts` (via PLANOO_API_KEY) so the agent can attribute its
+// schema push to the right account without doing OAuth itself.
+model AgentApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  // Store only a hash — never the raw key — same principle as password storage.
+  keyHash    String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

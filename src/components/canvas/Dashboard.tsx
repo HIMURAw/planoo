@@ -1,0 +1,223 @@
+"use client";
+
+import { useState } from "react";
+import { LinkCanvas } from "./LinkCanvas";
+import { LinkReviewPanel } from "./LinkReviewPanel";
+import { FigmaFileConnect } from "./FigmaFileConnect";
+import { AgentSetup } from "./AgentSetup";
+import type { LinkView } from "./types";
+
+interface DashboardProps {
+  userName: string;
+  figmaFileKey: string | null;
+  hasDbSnapshot: boolean;
+  hasAgentKey: boolean;
+  initialLinks: LinkView[];
+}
+
+type RecheckStatus =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "error"; code: string; message: string }
+  | { kind: "success"; isFirstRun: boolean };
+
+export function Dashboard({ userName, figmaFileKey, hasDbSnapshot, hasAgentKey, initialLinks }: DashboardProps) {
+  const [fileKey, setFileKey] = useState(figmaFileKey);
+  const [links, setLinks] = useState(initialLinks);
+  const [status, setStatus] = useState<RecheckStatus>({ kind: "idle" });
+  const [pendingLinkIds, setPendingLinkIds] = useState<Set<string>>(new Set());
+
+  const setupComplete = fileKey !== null && hasDbSnapshot;
+
+  async function handleRecheck() {
+    setStatus({ kind: "loading" });
+    try {
+      const response = await fetch("/api/recheck", { method: "POST" });
+      const data = (await response.json()) as {
+        links?: LinkView[];
+        isFirstRun?: boolean;
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok) {
+        setStatus({ kind: "error", code: data.error ?? "unknown", message: data.message ?? "Bilinmeyen hata" });
+        return;
+      }
+
+      setLinks(data.links ?? []);
+      setStatus({ kind: "success", isFirstRun: Boolean(data.isFirstRun) });
+    } catch {
+      setStatus({ kind: "error", code: "network", message: "Ağ hatası — tekrar dene." });
+    }
+  }
+
+  async function handleLinkAction(id: string, action: "confirm" | "reject") {
+    setPendingLinkIds((prev) => new Set(prev).add(id));
+    try {
+      const response = await fetch(`/api/links/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await response.json()) as { link?: LinkView };
+      if (response.ok && data.link) {
+        setLinks((prev) => prev.map((l) => (l.id === id ? data.link! : l)));
+      }
+    } finally {
+      setPendingLinkIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-8">
+      <header className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">planoo</h1>
+        <span className="text-sm text-zinc-500">Merhaba, {userName}</span>
+      </header>
+
+      {!setupComplete ? (
+        <SetupSteps
+          fileKey={fileKey}
+          hasDbSnapshot={hasDbSnapshot}
+          hasAgentKey={hasAgentKey}
+          onFigmaConnected={setFileKey}
+        />
+      ) : (
+        <>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleRecheck}
+              disabled={status.kind === "loading"}
+              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+            >
+              {status.kind === "loading" ? "Kontrol ediliyor…" : "Yeniden kontrol et"}
+            </button>
+            <StatusBanner status={status} />
+          </div>
+
+          {links.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
+              <LinkCanvas links={links} />
+              <LinkReviewPanel
+                links={links}
+                pending={pendingLinkIds}
+                onConfirm={(id) => handleLinkAction(id, "confirm")}
+                onReject={(id) => handleLinkAction(id, "reject")}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SetupSteps({
+  fileKey,
+  hasDbSnapshot,
+  hasAgentKey,
+  onFigmaConnected,
+}: {
+  fileKey: string | null;
+  hasDbSnapshot: boolean;
+  hasAgentKey: boolean;
+  onFigmaConnected: (key: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-6 rounded-lg border border-zinc-200 p-6 dark:border-zinc-800">
+      <h2 className="text-lg font-medium">İlk kurulum</h2>
+
+      <Step done={fileKey !== null} title="1. Figma dosyanı bağla">
+        {fileKey === null ? (
+          <FigmaFileConnect onConnected={onFigmaConnected} />
+        ) : (
+          <p className="text-sm text-zinc-500">Bağlı: {fileKey}</p>
+        )}
+      </Step>
+
+      <Step done={hasDbSnapshot} title="2. planoo-agent'ı veritabanına karşı çalıştır">
+        {!hasAgentKey ? (
+          <AgentSetup />
+        ) : hasDbSnapshot ? (
+          <p className="text-sm text-zinc-500">Veritabanı şeması alındı.</p>
+        ) : (
+          <p className="text-sm text-zinc-500">
+            Anahtar oluşturuldu, agent&apos;ın çalıştırılması bekleniyor. Sayfayı yenile.
+          </p>
+        )}
+      </Step>
+    </div>
+  );
+}
+
+function Step({ done, title, children }: { done: boolean; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-medium">
+        <span
+          className={`flex h-5 w-5 items-center justify-center rounded-full text-xs ${
+            done ? "bg-green-600 text-white" : "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
+          }`}
+        >
+          {done ? "✓" : ""}
+        </span>
+        {title}
+      </h3>
+      <div className="pl-7">{children}</div>
+    </div>
+  );
+}
+
+function EmptyState() {
+  // Explicit "ilk kurulum" state — decided in /plan-ceo-review Section 4:
+  // must read differently from "no drift found", since there's nothing to
+  // compare against yet on a first check.
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-zinc-300 p-12 text-center dark:border-zinc-700">
+      <p className="text-zinc-600 dark:text-zinc-400">
+        Henüz hiç bağlantı yok. Yukarıdaki &quot;Yeniden kontrol et&quot; ile ilk taramayı başlat.
+      </p>
+    </div>
+  );
+}
+
+function StatusBanner({ status }: { status: RecheckStatus }) {
+  if (status.kind === "success" && status.isFirstRun) {
+    return (
+      <span className="text-sm text-green-700 dark:text-green-400">
+        İlk kurulum tamamlandı — önerileri gözden geçir.
+      </span>
+    );
+  }
+  if (status.kind === "success") {
+    return <span className="text-sm text-zinc-500">Kontrol tamamlandı.</span>;
+  }
+  if (status.kind === "error" && status.code === "pending_figma_reauth") {
+    return (
+      <span className="text-sm text-amber-700 dark:text-amber-400">
+        {status.message}{" "}
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = "/api/auth/signin/figma";
+          }}
+          className="underline"
+        >
+          Figma&apos;yı yeniden bağla
+        </button>
+      </span>
+    );
+  }
+  if (status.kind === "error") {
+    return <span className="text-sm text-red-600">{status.message}</span>;
+  }
+  return null;
+}
