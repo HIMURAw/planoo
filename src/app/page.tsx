@@ -1,4 +1,4 @@
-import { auth, signIn } from "@/auth";
+import { auth, signIn, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Dashboard } from "@/components/canvas/Dashboard";
 
@@ -39,6 +39,11 @@ export default async function Home() {
     prisma.agentApiKey.count({ where: { userId: session.user.id, revokedAt: null } }),
   ]);
 
+  async function handleSignOut() {
+    "use server";
+    await signOut();
+  }
+
   return (
     <Dashboard
       userName={session.user.name ?? "there"}
@@ -53,6 +58,7 @@ export default async function Home() {
         confidence: l.confidence,
         state: l.state,
       }))}
+      onSignOut={handleSignOut}
     />
   );
 }

@@ -45,6 +45,10 @@ Three independently-deployable pieces, one monorepo:
 
 **Next.js 16 note:** this project was scaffolded on Next.js 16, which has real breaking changes from what most training data assumes — `cookies()`, `headers()`, route `params`, and `searchParams` are all `Promise`s that must be `await`ed (see `src/app/api/links/[id]/route.ts` for the async-params pattern). `middleware.ts` is renamed `proxy.ts` if one gets added. See `AGENTS.md` and `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md` before assuming an older Next.js API.
 
+## CI
+
+`.github/workflows/ci.yml` runs lint + build + unit tests on every push/PR to `main`, with no `DATABASE_URL` secret configured on purpose — `npm run build` and `npm run test` must both succeed with no database reachable (the DB-backed integration test self-skips; `src/lib/prisma.ts` uses a lazy Proxy specifically so `next build`'s page-data-collection step, which imports every route module, doesn't need a live connection).
+
 ## Design doc
 
 The full decision history (office-hours → CEO scope review → eng review, including two explicitly-accepted risks: skipping the pre-build validation spike, and the unvalidated core matching-heuristic assumption) lives at `~/.gstack/projects/HIMURAw-planoo/zamto-main-design-20260718-141641.md` on the machine this was built on — not part of this repo. `TODOS.md` at the repo root is the durable, repo-tracked record of deferred scope.

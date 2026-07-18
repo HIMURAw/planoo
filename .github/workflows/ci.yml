@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run build
+
+      # No DATABASE_URL here on purpose: the build must succeed without one
+      # (see src/lib/prisma.ts — lazy client construction, fixed after this
+      # broke CI-without-secrets during initial development). Unit tests run
+      # the same way; the DB-backed integration suite
+      # (src/lib/matcher/index.integration.test.ts) self-skips via
+      # `describe.runIf(hasDatabase)` when DATABASE_URL is absent, so this
+      # step still exercises everything that doesn't need a live MySQL.
+      - run: npm run test

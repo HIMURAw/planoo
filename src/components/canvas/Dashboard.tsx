@@ -13,6 +13,7 @@ interface DashboardProps {
   hasDbSnapshot: boolean;
   hasAgentKey: boolean;
   initialLinks: LinkView[];
+  onSignOut: () => Promise<void>;
 }
 
 type RecheckStatus =
@@ -21,7 +22,14 @@ type RecheckStatus =
   | { kind: "error"; code: string; message: string }
   | { kind: "success"; isFirstRun: boolean };
 
-export function Dashboard({ userName, figmaFileKey, hasDbSnapshot, hasAgentKey, initialLinks }: DashboardProps) {
+export function Dashboard({
+  userName,
+  figmaFileKey,
+  hasDbSnapshot,
+  hasAgentKey,
+  initialLinks,
+  onSignOut,
+}: DashboardProps) {
   const [fileKey, setFileKey] = useState(figmaFileKey);
   const [links, setLinks] = useState(initialLinks);
   const [status, setStatus] = useState<RecheckStatus>({ kind: "idle" });
@@ -77,7 +85,17 @@ export function Dashboard({ userName, figmaFileKey, hasDbSnapshot, hasAgentKey, 
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-8">
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-black dark:text-zinc-50">planoo</h1>
-        <span className="text-sm text-zinc-500">Merhaba, {userName}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-zinc-500">Merhaba, {userName}</span>
+          <form action={onSignOut}>
+            <button
+              type="submit"
+              className="text-sm text-zinc-500 underline hover:text-zinc-800 dark:hover:text-zinc-200"
+            >
+              Çıkış yap
+            </button>
+          </form>
+        </div>
       </header>
 
       {!setupComplete ? (
