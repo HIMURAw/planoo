@@ -26,11 +26,22 @@ function flattenNodes(node: RawFigmaNode, out: FigmaNode[]) {
   }
 }
 
+// Thrown when Figma rejects the file fetch itself (bad/deleted file key, or
+// the connected account doesn't have access) — distinct from
+// FigmaReauthRequiredError (bad/expired token), so /api/recheck can tell a
+// user "check the file key" instead of "reconnect Figma".
+export class FigmaFileFetchError extends Error {
+  constructor(public readonly status: number) {
+    super(`Figma file fetch failed with status ${status}`);
+    this.name = "FigmaFileFetchError";
+  }
+}
+
 export async function fetchFigmaFileNodes(fileKey: string, accessToken: string): Promise<FigmaNode[]> {
   const response = await figmaFetch(`/files/${fileKey}`, accessToken);
 
   if (!response.ok) {
-    throw new Error(`Figma file fetch failed with status ${response.status}`);
+    throw new FigmaFileFetchError(response.status);
   }
 
   const data = (await response.json()) as FigmaFileResponse;

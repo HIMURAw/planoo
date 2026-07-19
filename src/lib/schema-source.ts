@@ -9,9 +9,9 @@ import type { DbColumn } from "@/lib/matcher/types";
 // the way an externally-read DB does. Falls back to the last agent-pushed
 // SchemaSnapshot (source=mysql) for anyone still using the optional
 // scripts/agent.ts path (see TODOS.md — demoted from required to advanced).
-export async function getDbColumns(userId: string): Promise<DbColumn[] | null> {
+export async function getDbColumns(userId: string, projectId: string | null = null): Promise<DbColumn[] | null> {
   const designedTables = await prisma.designedTable.findMany({
-    where: { userId },
+    where: projectId ? { userId, projectId } : { userId },
     include: { columns: true },
   });
 

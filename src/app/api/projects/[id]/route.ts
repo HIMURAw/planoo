@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { extractFigmaFileKey } from "@/lib/figma-key";
 
 export async function GET(
   _request: Request,
@@ -40,12 +41,24 @@ export async function PATCH(
     figmaFileKey?: string;
     githubRepo?: string;
   };
+
+  let figmaFileKey: string | null | undefined;
+  if (body.figmaFileKey !== undefined) {
+    figmaFileKey = body.figmaFileKey.trim() ? extractFigmaFileKey(body.figmaFileKey) : null;
+    if (body.figmaFileKey.trim() && !figmaFileKey) {
+      return NextResponse.json(
+        { error: "invalid_figma_key", message: "Figma dosya anahtarı ya da linki geçersiz." },
+        { status: 400 },
+      );
+    }
+  }
+
   const project = await prisma.project.updateMany({
     where: { id, userId: session.user.id },
     data: {
       ...(body.name !== undefined && { name: body.name.trim() }),
       ...(body.description !== undefined && { description: body.description.trim() || null }),
-      ...(body.figmaFileKey !== undefined && { figmaFileKey: body.figmaFileKey || null }),
+      ...(figmaFileKey !== undefined && { figmaFileKey }),
       ...(body.githubRepo !== undefined && { githubRepo: body.githubRepo.trim() || null }),
     },
   });

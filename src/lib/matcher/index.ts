@@ -21,13 +21,14 @@ export async function runMatcher(
   snapshotId: string,
   figmaNodes: FigmaNode[],
   dbColumns: DbColumn[],
+  projectId: string | null = null,
 ) {
-  await reconcileConfirmedLinks(userId, snapshotId, figmaNodes, dbColumns);
+  await reconcileConfirmedLinks(userId, snapshotId, figmaNodes, dbColumns, projectId);
 
   const confirmedFigmaNodeIds = new Set(
     (
       await prisma.link.findMany({
-        where: { userId, state: "confirmed" },
+        where: { userId, projectId, state: "confirmed" },
         select: { figmaNodeId: true },
       })
     ).map((l) => l.figmaNodeId),
@@ -36,7 +37,7 @@ export async function runMatcher(
   const rejectedPairs = new Set(
     (
       await prisma.link.findMany({
-        where: { userId, state: "rejected" },
+        where: { userId, projectId, state: "rejected" },
         select: { figmaNodeId: true, dbTableName: true, dbColumnName: true },
       })
     ).map((l) => pairKey(l.figmaNodeId, l.dbTableName, l.dbColumnName)),
@@ -59,6 +60,7 @@ export async function runMatcher(
       },
       create: {
         userId,
+        projectId,
         figmaNodeId: candidate.figmaNodeId,
         dbTableName: candidate.dbTableName,
         dbColumnName: candidate.dbColumnName,
@@ -67,6 +69,12 @@ export async function runMatcher(
         lastSeenSnapshotId: snapshotId,
       },
       update: {
+        // Also backfills projectId onto a link created before a given user's
+        // project got one (e.g. pre-dashboard-restructuring data) — the
+        // identity key above is user-wide, not project-wide, so this is the
+        // one place that reattaches a stray link to "whichever project
+        // rechecked it most recently".
+        projectId,
         confidence: candidate.confidence,
         lastSeenSnapshotId: snapshotId,
         // NOTE: `state` is intentionally NOT overwritten here — an existing
@@ -93,9 +101,10 @@ async function reconcileConfirmedLinks(
   snapshotId: string,
   figmaNodes: FigmaNode[],
   dbColumns: DbColumn[],
+  projectId: string | null,
 ) {
   const confirmedLinks = await prisma.link.findMany({
-    where: { userId, state: "confirmed" },
+    where: { userId, projectId, state: "confirmed" },
   });
 
   const figmaNodeIds = new Set(figmaNodes.map((n) => n.id));

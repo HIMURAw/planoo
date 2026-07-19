@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getPlan, type PlanId } from "@/lib/pricing";
+import { extractFigmaFileKey } from "@/lib/figma-key";
 
 export async function GET() {
   const session = await auth();
@@ -40,6 +41,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "name_required", message: "Proje adı gerekli." }, { status: 400 });
   }
 
+  let figmaFileKey: string | null = null;
+  if (body.figmaFileKey?.trim()) {
+    figmaFileKey = extractFigmaFileKey(body.figmaFileKey);
+    if (!figmaFileKey) {
+      return NextResponse.json(
+        { error: "invalid_figma_key", message: "Figma dosya anahtarı ya da linki geçersiz." },
+        { status: 400 },
+      );
+    }
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: { plan: true },
@@ -65,7 +77,7 @@ export async function POST(request: Request) {
         name,
         description: body.description?.trim() || null,
         githubRepo: body.githubRepo?.trim() || null,
-        figmaFileKey: body.figmaFileKey?.trim() || null,
+        figmaFileKey,
       },
     });
     return NextResponse.json({ project }, { status: 201 });

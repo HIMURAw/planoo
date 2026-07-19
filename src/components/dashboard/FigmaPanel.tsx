@@ -27,11 +27,16 @@ export function FigmaPanel({ project, hasFigmaAccount, links, onLinksChange, onP
   if (!project) return null;
 
   const hasFigmaConnected = !!project.figmaFileKey && hasFigmaAccount;
+  const projectId = project.id;
 
   async function handleRecheck() {
     setStatus({ kind: "loading" });
     try {
-      const response = await fetch("/api/recheck", { method: "POST" });
+      const response = await fetch("/api/recheck", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
       const data = (await response.json()) as {
         links?: LinkView[];
         isFirstRun?: boolean;

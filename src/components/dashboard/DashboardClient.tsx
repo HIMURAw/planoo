@@ -112,6 +112,26 @@ export function DashboardClient({
     []
   );
 
+  const handleUpdateProjectFigmaFile = useCallback(
+    async (fileKeyOrUrl: string): Promise<{ ok: boolean; message?: string }> => {
+      if (!activeProjectId) return { ok: false, message: "Proje seçili değil." };
+      const res = await fetch(`/api/projects/${activeProjectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ figmaFileKey: fileKeyOrUrl }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, message: payload.message ?? "Güncellenemedi." };
+      }
+      setProjects((prev) =>
+        prev.map((p) => (p.id === activeProjectId ? { ...p, figmaFileKey: payload.project.figmaFileKey } : p))
+      );
+      return { ok: true };
+    },
+    [activeProjectId]
+  );
+
   const openCreateModal = useCallback(() => setIsCreateModalOpen(true), []);
   const closeCreateModal = useCallback(() => setIsCreateModalOpen(false), []);
 
@@ -179,7 +199,13 @@ export function DashboardClient({
       case "roadmap":
         return <RoadmapPanel project={activeProject} />;
       case "settings":
-        return <SettingsPanel project={activeProject} plan={plan} />;
+        return (
+          <SettingsPanel
+            project={activeProject}
+            plan={plan}
+            onUpdateFigmaFile={handleUpdateProjectFigmaFile}
+          />
+        );
       default:
         return null;
     }

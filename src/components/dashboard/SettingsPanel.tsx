@@ -1,14 +1,42 @@
 "use client";
 
+import { useState } from "react";
 import { type ProjectView } from "./DashboardLayout";
 
 interface SettingsPanelProps {
   project: ProjectView | null;
   plan: string;
+  onUpdateFigmaFile: (fileKeyOrUrl: string) => Promise<{ ok: boolean; message?: string }>;
 }
 
-export function SettingsPanel({ project, plan }: SettingsPanelProps) {
+export function SettingsPanel({ project, plan, onUpdateFigmaFile }: SettingsPanelProps) {
+  const [isEditingFigmaFile, setIsEditingFigmaFile] = useState(false);
+  const [figmaFileInput, setFigmaFileInput] = useState("");
+  const [figmaFileError, setFigmaFileError] = useState<string | null>(null);
+  const [isSavingFigmaFile, setIsSavingFigmaFile] = useState(false);
+
   if (!project) return null;
+
+  function startEditingFigmaFile() {
+    setFigmaFileInput(project!.figmaFileKey ?? "");
+    setFigmaFileError(null);
+    setIsEditingFigmaFile(true);
+  }
+
+  async function handleSaveFigmaFile() {
+    setIsSavingFigmaFile(true);
+    setFigmaFileError(null);
+    try {
+      const result = await onUpdateFigmaFile(figmaFileInput);
+      if (!result.ok) {
+        setFigmaFileError(result.message ?? "Kaydedilemedi.");
+        return;
+      }
+      setIsEditingFigmaFile(false);
+    } finally {
+      setIsSavingFigmaFile(false);
+    }
+  }
 
   return (
     <div className="max-w-4xl mx-auto pb-12 animate-in fade-in duration-500">
@@ -46,18 +74,61 @@ export function SettingsPanel({ project, plan }: SettingsPanelProps) {
               </a>
             </div>
 
-            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5">
-              <div>
-                <h3 className="text-white font-medium mb-1">Figma Dosyası</h3>
-                <p className="text-sm text-zinc-400">
-                  {project.figmaFileKey 
-                    ? `Şu anda bağlı dosya: ${project.figmaFileKey}`
-                    : 'Bu projeye henüz bir Figma dosyası bağlanmadı.'}
-                </p>
-              </div>
-              <button className="px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-400 hover:to-fuchsia-400 text-white text-sm font-medium rounded-lg transition-all shadow-[0_0_10px_rgba(139,92,246,0.2)] whitespace-nowrap">
-                {project.figmaFileKey ? 'Dosyayı Değiştir' : 'Dosya Ekle'}
-              </button>
+            <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+              {isEditingFigmaFile ? (
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-white font-medium mb-1">Figma Dosyası</h3>
+                    <p className="text-sm text-zinc-400">Figma dosya linkini ya da linkteki anahtarı yapıştırın.</p>
+                  </div>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={figmaFileInput}
+                    onChange={(e) => setFigmaFileInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveFigmaFile();
+                      if (e.key === "Escape") setIsEditingFigmaFile(false);
+                    }}
+                    placeholder="https://www.figma.com/design/... ya da dosya anahtarı"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all"
+                  />
+                  {figmaFileError && <p className="text-sm text-red-400">{figmaFileError}</p>}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleSaveFigmaFile}
+                      disabled={isSavingFigmaFile}
+                      className="px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-400 hover:to-fuchsia-400 text-white text-sm font-medium rounded-lg transition-all shadow-[0_0_10px_rgba(139,92,246,0.2)] disabled:opacity-50"
+                    >
+                      {isSavingFigmaFile ? "Kaydediliyor…" : "Kaydet"}
+                    </button>
+                    <button
+                      onClick={() => setIsEditingFigmaFile(false)}
+                      disabled={isSavingFigmaFile}
+                      className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors"
+                    >
+                      İptal
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-white font-medium mb-1">Figma Dosyası</h3>
+                    <p className="text-sm text-zinc-400">
+                      {project.figmaFileKey
+                        ? `Şu anda bağlı dosya: ${project.figmaFileKey}`
+                        : "Bu projeye henüz bir Figma dosyası bağlanmadı."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={startEditingFigmaFile}
+                    className="px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-400 hover:to-fuchsia-400 text-white text-sm font-medium rounded-lg transition-all shadow-[0_0_10px_rgba(139,92,246,0.2)] whitespace-nowrap"
+                  >
+                    {project.figmaFileKey ? "Dosyayı Değiştir" : "Dosya Ekle"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </section>

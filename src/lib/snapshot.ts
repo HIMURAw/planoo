@@ -3,27 +3,35 @@ import { encryptPayload, decryptPayload } from "@/lib/crypto";
 import type { SnapshotSource } from "@prisma/client";
 
 // Retention policy decided in /plan-eng-review Section 4 (Performance):
-// only the last 2 snapshots per (userId, source) are kept — current +
-// previous is all drift-detection needs. Scoped per user+source, NOT
-// global, so one user's recheck never deletes another user's history
-// (the bug outside voice flagged in "global last-2").
+// only the last 2 snapshots per (userId, projectId, source) are kept —
+// current + previous is all drift-detection needs. Scoped per
+// user+project+source, NOT global, so one user's recheck never deletes
+// another user's history (the bug outside voice flagged in "global last-2"),
+// and (once multi-project landed) one project's recheck never prunes
+// another project's history either.
+//
+// projectId is null for agent-pushed ("mysql") snapshots — scripts/agent.ts
+// has no concept of a project (see TODOS.md) — and always a real project id
+// for "figma" snapshots, passed in by /api/recheck.
 const RETAINED_SNAPSHOTS_PER_USER_SOURCE = 2;
 
 export async function createSnapshot(
   userId: string,
   source: SnapshotSource,
   rawPayload: unknown,
+  projectId: string | null = null,
 ) {
   const snapshot = await prisma.schemaSnapshot.create({
     data: {
       userId,
+      projectId,
       source,
       payload: encryptPayload(JSON.stringify(rawPayload)),
     },
   });
 
   const stale = await prisma.schemaSnapshot.findMany({
-    where: { userId, source },
+    where: { userId, projectId, source },
     orderBy: { createdAt: "desc" },
     skip: RETAINED_SNAPSHOTS_PER_USER_SOURCE,
     select: { id: true },
@@ -38,18 +46,26 @@ export async function createSnapshot(
   return snapshot;
 }
 
-export async function getLatestSnapshot(userId: string, source: SnapshotSource) {
+export async function getLatestSnapshot(
+  userId: string,
+  source: SnapshotSource,
+  projectId: string | null = null,
+) {
   const snapshot = await prisma.schemaSnapshot.findFirst({
-    where: { userId, source },
+    where: { userId, projectId, source },
     orderBy: { createdAt: "desc" },
   });
   if (!snapshot) return null;
   return { ...snapshot, payload: JSON.parse(decryptPayload(snapshot.payload)) as unknown };
 }
 
-export async function getPreviousSnapshot(userId: string, source: SnapshotSource) {
+export async function getPreviousSnapshot(
+  userId: string,
+  source: SnapshotSource,
+  projectId: string | null = null,
+) {
   const snapshots = await prisma.schemaSnapshot.findMany({
-    where: { userId, source },
+    where: { userId, projectId, source },
     orderBy: { createdAt: "desc" },
     take: 2,
   });
