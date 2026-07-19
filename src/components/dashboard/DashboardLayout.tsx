@@ -5,7 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { DashboardHeader } from "./DashboardHeader";
 import { getPlan, type PlanId } from "@/lib/pricing";
 
-export type ActivePanel = "overview" | "schema" | "figma" | "roadmap" | "settings";
+export type ActivePanel = "overview" | "schema" | "figma" | "roadmap" | "cost" | "settings";
 
 export interface ProjectView {
   id: string;

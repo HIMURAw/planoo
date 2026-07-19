@@ -53,7 +53,9 @@ interface TypeMapping {
   unrecognized?: boolean;
 }
 
-function parseDataType(dataType: string): { base: string; args: string[] } {
+// Exported for reuse by lib/cost-estimate.ts, which needs the same
+// free-text-SQL-type -> base-name-plus-args split to size columns.
+export function parseDataType(dataType: string): { base: string; args: string[] } {
   const match = dataType.trim().toLowerCase().match(/^([a-z]+)\s*(?:\(([^)]*)\))?/);
   const base = match?.[1] ?? "";
   const args = match?.[2] ? match[2].split(",").map((a) => a.trim()) : [];

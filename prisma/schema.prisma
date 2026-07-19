@@ -225,12 +225,13 @@ model Project {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  designedTables  DesignedTable[]
-  links           Link[]
-  roadmapItems    RoadmapItem[]
-  roadmapColumns  RoadmapColumn[]
-  schemaSnapshots SchemaSnapshot[]
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  designedTables    DesignedTable[]
+  links             Link[]
+  roadmapItems      RoadmapItem[]
+  roadmapColumns    RoadmapColumn[]
+  schemaSnapshots   SchemaSnapshot[]
+  costEstimateInput CostEstimateInput?
 
   @@unique([userId, name])
 }
@@ -302,6 +303,47 @@ model AgentApiKey {
   revokedAt  DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Persisted, per-project cost-simulator inputs — deliberately the ONLY
+// thing this feature persists (v0: "build fast, validate via real usage").
+// One row per project (upsert on save): remembers the user's last
+// assumptions across sessions and doubles as a queryable usage signal (row
+// existence / updatedAt recency) with no dedicated analytics infra needed.
+// The computed cost breakdown itself is NEVER stored here — it's cheap to
+// recompute from these inputs + the live DesignedTable/Column schema + the
+// hardcoded preset rate table (lib/cost-presets.ts), so schema edits and
+// rate-table tweaks show up immediately with no cache-invalidation or
+// backfill concern. No history of past calculations is kept (see TODOS.md
+// — explicitly deferred until there's demand for cost-trend tracking).
+model CostEstimateInput {
+  id        String @id @default(cuid())
+  projectId String @unique
+
+  // Which hardcoded reference stack (see lib/cost-presets.ts) the estimate
+  // is based on — free-text id, not an enum, so adding/renaming presets
+  // never needs a migration (same reasoning as DesignedColumn.dataType).
+  presetId            String
+  monthlyActiveUsers  Int    @default(0)
+  // Only feeds the qualitative "bottleneck" flags, never multiplied
+  // directly into the dollar total — see lib/cost-estimate.ts for why
+  // request-based billing was deliberately folded into a single blended
+  // per-MAU rate instead of a second rate that would need its own
+  // sourcing/defending.
+  avgRequestsPerUser  Int    @default(50)
+  // Applied uniformly to every DesignedTable when deriving DB storage —
+  // the v0 simplification instead of a per-table row-count input grid.
+  assumedRowsPerTable Int    @default(10000)
+  // GB not represented by the designed schema at all (file/blob uploads,
+  // exports, etc.) — added on top of the schema-derived DB storage rather
+  // than guessed from column names.
+  manualFileStorageGb Float  @default(0)
+  egressGbPerMonth    Float  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 enum PlanTier {
