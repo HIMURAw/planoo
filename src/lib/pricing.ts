@@ -35,6 +35,7 @@ export const PLANS: PlanDefinition[] = [
       "Şemanı .sql olarak indir",
     ],
     cta: "Ücretsiz başla",
+    projectLimit: 1,
   },
   {
     id: "solo",
@@ -50,6 +51,7 @@ export const PLANS: PlanDefinition[] = [
     cta: "Solo'ya geç",
     variantEnvVar: "LEMONSQUEEZY_SOLO_VARIANT_ID",
     highlighted: true,
+    projectLimit: null,
   },
   {
     id: "team",

@@ -34,13 +34,19 @@ export async function PATCH(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  const body = (await request.json()) as { name?: string; description?: string; figmaFileKey?: string };
+  const body = (await request.json()) as {
+    name?: string;
+    description?: string;
+    figmaFileKey?: string;
+    githubRepo?: string;
+  };
   const project = await prisma.project.updateMany({
     where: { id, userId: session.user.id },
     data: {
       ...(body.name !== undefined && { name: body.name.trim() }),
       ...(body.description !== undefined && { description: body.description.trim() || null }),
       ...(body.figmaFileKey !== undefined && { figmaFileKey: body.figmaFileKey || null }),
+      ...(body.githubRepo !== undefined && { githubRepo: body.githubRepo.trim() || null }),
     },
   });
   if (project.count === 0) {

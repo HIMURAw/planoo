@@ -10,7 +10,7 @@ interface DashboardHeaderProps {
   projects: ProjectView[];
   activeProject: ProjectView | null;
   onProjectChange: (projectId: string) => void;
-  onProjectCreate: (name: string, description?: string) => Promise<void>;
+  onOpenCreateModal: () => void;
   onSignOut: () => Promise<void>;
 }
 
@@ -20,7 +20,7 @@ export function DashboardHeader({
   projects,
   activeProject,
   onProjectChange,
-  onProjectCreate,
+  onOpenCreateModal,
   onSignOut
 }: DashboardHeaderProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -28,11 +28,11 @@ export function DashboardHeader({
   return (
     <header className="h-16 glass-panel flex items-center justify-between px-6 relative z-10">
       <div className="flex items-center gap-4">
-        <ProjectSelector 
+        <ProjectSelector
           projects={projects}
           activeProject={activeProject}
           onProjectChange={onProjectChange}
-          onProjectCreate={onProjectCreate}
+          onOpenCreateModal={onOpenCreateModal}
         />
       </div>
 

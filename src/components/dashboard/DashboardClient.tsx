@@ -7,8 +7,10 @@ import { SchemaPanel } from "./SchemaPanel";
 import { FigmaPanel } from "./FigmaPanel";
 import { RoadmapPanel } from "./RoadmapPanel";
 import { SettingsPanel } from "./SettingsPanel";
+import { CreateProjectModal, type CreateProjectFormData } from "./CreateProjectModal";
 import type { DesignedTable } from "@/components/canvas/SchemaBuilder";
 import type { LinkView } from "@/components/canvas/types";
+import { getPlan, type PlanId } from "@/lib/pricing";
 
 interface DashboardClientProps {
   userName: string;
@@ -32,6 +34,7 @@ export function DashboardClient({
     initialProjects.length > 0 ? initialProjects[0].id : null
   );
   const [activePanel, setActivePanel] = useState<ActivePanel>("overview");
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Project-specific data loaded on demand
   const [designedTables, setDesignedTables] = useState<DesignedTable[]>([]);
@@ -84,28 +87,33 @@ export function DashboardClient({
   );
 
   const handleProjectCreate = useCallback(
-    async (name: string, description?: string) => {
+    async (data: CreateProjectFormData): Promise<{ ok: boolean; message?: string }> => {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify(data),
       });
-      if (res.ok) {
-        const data = await res.json();
-        const newProject: ProjectView = {
-          ...data.project,
-          _count: { designedTables: 0, links: 0, roadmapItems: 0 },
-        };
-        setProjects((prev) => [newProject, ...prev]);
-        setActiveProjectId(newProject.id);
-        setProjectDataLoaded(null);
-        setDesignedTables([]);
-        setLinks([]);
-        setActivePanel("overview");
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, message: payload.message ?? "Proje oluşturulamadı." };
       }
+      const newProject: ProjectView = {
+        ...payload.project,
+        _count: { designedTables: 0, links: 0, roadmapItems: 0 },
+      };
+      setProjects((prev) => [newProject, ...prev]);
+      setActiveProjectId(newProject.id);
+      setProjectDataLoaded(null);
+      setDesignedTables([]);
+      setLinks([]);
+      setActivePanel("overview");
+      return { ok: true };
     },
     []
   );
+
+  const openCreateModal = useCallback(() => setIsCreateModalOpen(true), []);
+  const closeCreateModal = useCallback(() => setIsCreateModalOpen(false), []);
 
   const handlePanelChange = useCallback(
     (panel: ActivePanel) => {
@@ -130,6 +138,7 @@ export function DashboardClient({
           <OverviewPanel
             project={activeProject}
             onPanelChange={handlePanelChange}
+            onOpenCreateModal={openCreateModal}
           />
         );
       case "schema":
@@ -176,20 +185,32 @@ export function DashboardClient({
     }
   }
 
+  const planDef = getPlan((plan as PlanId) ?? "free");
+
   return (
-    <DashboardLayout
-      userName={userName}
-      userImage={userImage}
-      plan={plan}
-      projects={projects}
-      activeProject={activeProject}
-      activePanel={activePanel}
-      onPanelChange={handlePanelChange}
-      onProjectChange={handleProjectChange}
-      onProjectCreate={handleProjectCreate}
-      onSignOut={onSignOut}
-    >
-      {renderPanel()}
-    </DashboardLayout>
+    <>
+      <DashboardLayout
+        userName={userName}
+        userImage={userImage}
+        plan={plan}
+        projects={projects}
+        activeProject={activeProject}
+        activePanel={activePanel}
+        onPanelChange={handlePanelChange}
+        onProjectChange={handleProjectChange}
+        onOpenCreateModal={openCreateModal}
+        onSignOut={onSignOut}
+      >
+        {renderPanel()}
+      </DashboardLayout>
+      <CreateProjectModal
+        isOpen={isCreateModalOpen}
+        onClose={closeCreateModal}
+        onSubmit={handleProjectCreate}
+        planName={planDef.name}
+        projectLimit={planDef.projectLimit}
+        projectCount={projects.length}
+      />
+    </>
   );
 }

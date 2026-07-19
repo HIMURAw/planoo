@@ -8,9 +8,11 @@ interface SidebarProps {
   onPanelChange: (panel: ActivePanel) => void;
   activeProject: ProjectView | null;
   plan: string;
+  projectCount: number;
+  projectLimit: number | null;
 }
 
-export function Sidebar({ activePanel, onPanelChange, activeProject, plan }: SidebarProps) {
+export function Sidebar({ activePanel, onPanelChange, activeProject, plan, projectCount, projectLimit }: SidebarProps) {
   const menuItems: { id: ActivePanel; label: string; icon: React.ReactNode; count?: number }[] = [
     {
       id: "overview",
@@ -110,6 +112,9 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan }: Sid
           <div className="flex flex-col">
             <span className="text-xs text-zinc-400">Mevcut Plan</span>
             <span className="text-sm font-medium text-white capitalize">{plan}</span>
+            <span className="text-[11px] text-zinc-500 mt-0.5">
+              {projectLimit === null ? `${projectCount} proje · Sınırsız` : `${projectCount} / ${projectLimit} proje`}
+            </span>
           </div>
           <div className="w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center border border-violet-500/20">
             <svg className="w-4 h-4 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

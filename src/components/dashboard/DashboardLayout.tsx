@@ -3,6 +3,7 @@
 import { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { DashboardHeader } from "./DashboardHeader";
+import { getPlan, type PlanId } from "@/lib/pricing";
 
 export type ActivePanel = "overview" | "schema" | "figma" | "roadmap" | "settings";
 
@@ -11,6 +12,7 @@ export interface ProjectView {
   name: string;
   description: string | null;
   figmaFileKey: string | null;
+  githubRepo: string | null;
   _count: { designedTables: number; links: number; roadmapItems: number };
 }
 
@@ -23,7 +25,7 @@ interface DashboardLayoutProps {
   activePanel: ActivePanel;
   onPanelChange: (panel: ActivePanel) => void;
   onProjectChange: (projectId: string) => void;
-  onProjectCreate: (name: string, description?: string) => Promise<void>;
+  onOpenCreateModal: () => void;
   onSignOut: () => Promise<void>;
   children: ReactNode;
 }
@@ -37,15 +39,24 @@ export function DashboardLayout({
   activePanel,
   onPanelChange,
   onProjectChange,
-  onProjectCreate,
+  onOpenCreateModal,
   onSignOut,
   children,
 }: DashboardLayoutProps) {
+  const projectLimit = getPlan((plan as PlanId) ?? "free").projectLimit;
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#020205] text-zinc-100 p-4 gap-4">
       {/* Sidebar: rounded & floating */}
-      <Sidebar activePanel={activePanel} onPanelChange={onPanelChange} activeProject={activeProject} plan={plan} />
-      
+      <Sidebar
+        activePanel={activePanel}
+        onPanelChange={onPanelChange}
+        activeProject={activeProject}
+        plan={plan}
+        projectCount={projects.length}
+        projectLimit={projectLimit}
+      />
+
       {/* Main content wrapper */}
       <div className="flex flex-1 flex-col overflow-hidden gap-4">
         {/* Header: floating panel */}
@@ -55,7 +66,7 @@ export function DashboardLayout({
           projects={projects}
           activeProject={activeProject}
           onProjectChange={onProjectChange}
-          onProjectCreate={onProjectCreate}
+          onOpenCreateModal={onOpenCreateModal}
           onSignOut={onSignOut}
         />
         
