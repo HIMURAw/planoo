@@ -10,16 +10,14 @@ interface OverviewPanelProps {
 export function OverviewPanel({ project, onPanelChange }: OverviewPanelProps) {
   if (!project) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-center p-8 blueprint-grid rounded-2xl min-h-[500px]">
-        <div className="w-20 h-20 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20 mb-6 shadow-lg shadow-black/40 backdrop-blur-md">
-          <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="h-full flex flex-col items-center justify-center text-center p-8 min-h-[500px]">
+        <div className="w-20 h-20 bg-violet-500/10 rounded-2xl flex items-center justify-center border border-violet-500/20 mb-6 shadow-lg shadow-black/20 backdrop-blur-md">
+          <svg className="w-10 h-10 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
           </svg>
         </div>
         <h2 className="text-3xl font-bold text-white mb-3 tracking-tight">Planoo'ya Hoş Geldin!</h2>
-        <p className="text-zinc-300 max-w-md mx-auto mb-8 font-mono text-sm leading-relaxed">
-          [DRAFT_MODE: VERITABANI VE FIGMA EŞLEŞTİRME SAHASI]
-          <br />
+        <p className="text-zinc-400 max-w-md mx-auto mb-8 text-sm leading-relaxed">
           Lütfen sol üstten mevcut bir projeyi seçin veya yeni bir proje oluşturarak başlayın.
         </p>
       </div>
@@ -92,26 +90,33 @@ export function OverviewPanel({ project, onPanelChange }: OverviewPanelProps) {
         ))}
       </div>
 
-      {/* Blueprint Mode Preview */}
+      {/* Grid: Project Info & Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Schematic Preview */}
-        <div className="lg:col-span-2 blueprint-grid rounded-2xl border border-blue-500/20 p-6 flex flex-col justify-between min-h-[300px] shadow-inner relative overflow-hidden">
-          <div className="relative z-10">
-            <span className="text-xs font-mono text-blue-400/80 uppercase tracking-widest block mb-2">[Şema Taslak Görünümü]</span>
-            <h3 className="text-xl font-bold text-white mb-4">Veri Mimarisi Planı</h3>
-            <div className="font-mono text-xs text-blue-300/70 space-y-2 border-l border-blue-500/30 pl-4 py-2">
-              <p># SCHEMA VERSION 1.0</p>
-              <p># DESIGNED TABLES: {project._count.designedTables}</p>
-              <p># confirmed_links: {project._count.links}</p>
+        {/* Project Info Block */}
+        <div className="lg:col-span-2 glass-panel p-6 flex flex-col justify-between min-h-[300px]">
+          <div>
+            <h3 className="text-xl font-bold text-white mb-4">Proje Özeti</h3>
+            <p className="text-zinc-400 text-sm leading-relaxed mb-6">
+              Bu projede tasarladığınız SQL tabloları ile Figma ekranlarınızdaki görsel bileşenleri eşleştirebilirsiniz. Şemalarda veya tasarımlarda oluşacak uyumsuzluklar (drift) anında tespit edilerek Figma Bağlantıları panelinde listelenecektir.
+            </p>
+            <div className="grid grid-cols-2 gap-4 text-xs font-mono border-t border-white/5 pt-4">
+              <div>
+                <span className="text-zinc-500 block mb-1">SQL TASARIM:</span>
+                <span className="text-blue-400">{project._count.designedTables} Tablo Çizildi</span>
+              </div>
+              <div>
+                <span className="text-zinc-500 block mb-1">EŞLEŞMELER:</span>
+                <span className="text-fuchsia-400">{project._count.links} Bağlantı Onaylandı</span>
+              </div>
             </div>
           </div>
-          <div className="relative z-10 flex items-center justify-between border-t border-blue-500/20 pt-4 mt-6">
-            <span className="text-xs font-mono text-blue-400">STATUS: ACTIVE</span>
+          <div className="flex items-center justify-between border-t border-white/5 pt-4 mt-6">
+            <span className="text-xs text-zinc-400">Durum: Aktif</span>
             <button 
               onClick={() => onPanelChange('schema')}
-              className="text-xs font-mono bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-200 px-3 py-1.5 rounded-lg transition-colors"
+              className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg transition-colors border border-white/10"
             >
-              Şema Düzenleyiciyi Aç →
+              SQL Şemalarını Aç →
             </button>
           </div>
         </div>

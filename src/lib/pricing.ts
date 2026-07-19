@@ -17,6 +17,8 @@ export interface PlanDefinition {
   /** Env var name holding this plan's Lemon Squeezy variant ID. Free has none — it's not a checkout. */
   variantEnvVar?: "LEMONSQUEEZY_SOLO_VARIANT_ID" | "LEMONSQUEEZY_TEAM_VARIANT_ID";
   highlighted?: boolean;
+  /** Max concurrent projects. `null` = unlimited. Enforced server-side in POST /api/projects — this is the single source of truth both the API and the UI read from, so the two never drift apart. */
+  projectLimit: number | null;
 }
 
 export const PLANS: PlanDefinition[] = [
