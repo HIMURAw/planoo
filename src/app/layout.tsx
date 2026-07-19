@@ -28,7 +28,12 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        <div aria-hidden className="app-canvas-bg" />
+        <div aria-hidden className="app-canvas-bg">
+          <span className="smoke-blob smoke-blob-1" />
+          <span className="smoke-blob smoke-blob-2" />
+          <span className="smoke-blob smoke-blob-3" />
+          <span className="smoke-blob smoke-blob-4" />
+        </div>
         {children}
       </body>
     </html>

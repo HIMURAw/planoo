@@ -39,14 +39,12 @@ export function SchemaPanel({ project, initialTables, onSchemaChanged }: SchemaP
         </div>
       </div>
 
-      <div className="flex-1 blueprint-grid border border-blue-500/30 rounded-2xl overflow-y-auto relative p-6 shadow-2xl shadow-black/80">
-        <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-[#0b192c] to-transparent pointer-events-none z-10" />
-        <div className="relative z-10 font-mono">
-          <SchemaBuilder
-            initialTables={initialTables}
-            onSchemaChanged={onSchemaChanged}
-          />
-        </div>
+      <div className="flex-1 bg-[#0b192c] border border-blue-500/30 rounded-2xl overflow-hidden relative shadow-2xl shadow-black/80">
+        <SchemaBuilder
+          projectId={project.id}
+          initialTables={initialTables}
+          onSchemaChanged={onSchemaChanged}
+        />
       </div>
     </div>
   );

@@ -1,17 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { DesignedColumn, DesignedTable } from "./SchemaBuilder";
 
 export interface SchemaTableNodeData extends Record<string, unknown> {
   table: DesignedTable;
+}
+
+export type SchemaTableNodeType = Node<SchemaTableNodeData, "tableNode">;
+
+export interface SchemaCanvasHandlers {
   onAddColumn: (tableId: string, column: Omit<DesignedColumn, "id">) => void;
   onDeleteColumn: (tableId: string, columnId: string) => void;
   onDeleteTable: (tableId: string) => void;
 }
 
-export type SchemaTableNodeType = Node<SchemaTableNodeData, "tableNode">;
+// Node data only ever carries the table (see SchemaTableNodeData) — the
+// mutation callbacks live here instead. Keeping them out of node.data avoids
+// a declaration-order problem: those callbacks close over the `setNodes`
+// state setter, which must be declared before them (the React Compiler
+// enforces this), but node.data for the *initial* nodes array has to exist
+// at the moment `useState` itself runs — before any of those callbacks can
+// be defined. A context sidesteps the cycle entirely.
+const SchemaCanvasContext = createContext<SchemaCanvasHandlers | null>(null);
+export const SchemaCanvasProvider = SchemaCanvasContext.Provider;
+
+function useSchemaCanvasHandlers(): SchemaCanvasHandlers {
+  const ctx = useContext(SchemaCanvasContext);
+  if (!ctx) throw new Error("SchemaTableNode must be rendered inside a SchemaCanvasProvider");
+  return ctx;
+}
 
 // A single ERD box on the blueprint canvas. The whole card is the React
 // Flow drag surface except elements marked "nodrag" (inputs/buttons) —
@@ -19,7 +38,8 @@ export type SchemaTableNodeType = Node<SchemaTableNodeData, "tableNode">;
 // Each column row carries its own target (left) and source (right) Handle
 // so FK relationships can be drawn column-to-column, not just table-to-table.
 export function SchemaTableNode({ data }: NodeProps<SchemaTableNodeType>) {
-  const { table, onAddColumn, onDeleteColumn, onDeleteTable } = data;
+  const { table } = data;
+  const { onAddColumn, onDeleteColumn, onDeleteTable } = useSchemaCanvasHandlers();
   const [showAddColumn, setShowAddColumn] = useState(false);
 
   return (

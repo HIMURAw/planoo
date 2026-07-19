@@ -22,20 +22,86 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
-/* Ambient app background: a soft multi-color glow plus a faint grid, fixed
-   behind everything so glass panels always have something worth blurring.
-   Applied once on <body> (see layout.tsx) instead of repeated per-section —
-   sections that want a stronger local glow (Hero) still add their own on
-   top of this. */
+/* Ambient app background: soft blurred color blobs that slowly drift, like
+   smoke, plus a faint grid — fixed behind everything so glass panels always
+   have something worth blurring. Applied once on <body> (see layout.tsx)
+   instead of repeated per-section — sections that want a stronger local glow
+   (Hero) still add their own on top of this. Solid #05050a base underneath
+   keeps it a dark theme; the blobs are what make it feel alive instead of
+   flat black. */
 .app-canvas-bg {
   position: fixed;
   inset: 0;
   z-index: -1;
+  overflow: hidden;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse 900px 600px at 15% -10%, rgba(139, 92, 246, 0.18), transparent 60%),
-    radial-gradient(ellipse 800px 500px at 100% 10%, rgba(59, 130, 246, 0.14), transparent 60%),
-    radial-gradient(ellipse 700px 500px at 50% 100%, rgba(217, 70, 239, 0.1), transparent 60%);
+  background: #05050a;
+}
+
+.app-canvas-bg .smoke-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.55;
+  will-change: transform;
+}
+.app-canvas-bg .smoke-blob-1 {
+  top: -12%;
+  left: -8%;
+  width: 620px;
+  height: 620px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.55), transparent 70%);
+  animation: smokeDrift1 34s ease-in-out infinite alternate;
+}
+.app-canvas-bg .smoke-blob-2 {
+  top: -5%;
+  right: -10%;
+  width: 560px;
+  height: 560px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.45), transparent 70%);
+  animation: smokeDrift2 40s ease-in-out infinite alternate;
+}
+.app-canvas-bg .smoke-blob-3 {
+  bottom: -15%;
+  left: 28%;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(217, 70, 239, 0.4), transparent 70%);
+  animation: smokeDrift3 46s ease-in-out infinite alternate;
+}
+.app-canvas-bg .smoke-blob-4 {
+  bottom: 5%;
+  right: 12%;
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.35), transparent 70%);
+  animation: smokeDrift4 38s ease-in-out infinite alternate;
+}
+
+@keyframes smokeDrift1 {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(120px, 90px) scale(1.15); }
+  100% { transform: translate(-60px, 150px) scale(0.95); }
+}
+@keyframes smokeDrift2 {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-100px, 110px) scale(1.1); }
+  100% { transform: translate(-160px, -40px) scale(0.9); }
+}
+@keyframes smokeDrift3 {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(90px, -80px) scale(1.2); }
+  100% { transform: translate(160px, 30px) scale(0.85); }
+}
+@keyframes smokeDrift4 {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-80px, -60px) scale(1.1); }
+  100% { transform: translate(70px, -110px) scale(0.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-canvas-bg .smoke-blob {
+    animation: none;
+  }
 }
 
 .app-canvas-bg::after {
@@ -198,9 +264,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(5, 5, 12, 0.45);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
   animation: fadeIn 0.2s ease;
 }
 .modal-panel {

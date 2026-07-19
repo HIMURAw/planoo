@@ -46,7 +46,7 @@ export function DashboardLayout({
   const projectLimit = getPlan((plan as PlanId) ?? "free").projectLimit;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#020205] text-zinc-100 p-4 gap-4">
+    <div className="flex h-screen overflow-hidden text-zinc-100 p-4 gap-4">
       {/* Sidebar: rounded & floating */}
       <Sidebar
         activePanel={activePanel}

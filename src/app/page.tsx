@@ -20,7 +20,7 @@ export default async function Home() {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-black">
+    <div className="flex flex-1 flex-col">
       <Nav
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
