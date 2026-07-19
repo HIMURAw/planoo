@@ -161,6 +161,11 @@ model DesignedTable {
   userId    String
   projectId String?
   name      String
+  // Canvas position (blueprint drag-and-drop layout). Defaults to 0,0 for
+  // rows created before the canvas existed — the client auto-arranges any
+  // tables it finds stacked at the origin on first render.
+  posX      Float    @default(0)
+  posY      Float    @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
