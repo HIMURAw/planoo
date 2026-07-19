@@ -56,7 +56,7 @@ export function OverviewPanel({ project, onPanelChange, onOpenCreateModal }: Ove
       color: "from-fuchsia-500/20 to-fuchsia-500/5 border-fuchsia-500/20"
     },
     {
-      label: "Roadmap Durumu",
+      label: "Yapılacaklar Durumu",
       value: project._count.roadmapItems,
       icon: (
         <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -154,7 +154,7 @@ export function OverviewPanel({ project, onPanelChange, onOpenCreateModal }: Ove
                 onClick={() => onPanelChange('roadmap')}
                 className="w-full flex items-center justify-between p-3 rounded-xl bg-white/3 border border-white/5 hover:border-emerald-500/20 hover:bg-emerald-500/5 transition-all text-left text-sm text-zinc-300 hover:text-white"
               >
-                <span>Yol Haritası (Kanban)</span>
+                <span>Yapılacaklar Listesi</span>
                 <span className="text-emerald-400 text-xs">Aç →</span>
               </button>
             </div>

@@ -290,6 +290,13 @@ body {
 .modal-panel.closing {
   animation: scaleOut 0.18s ease forwards;
 }
+/* Wider variant for modals with denser content (e.g. the roadmap card
+   detail modal's label/date grid + comment thread) — a Tailwind max-w-*
+   utility can't win this override since .modal-panel's own max-width is
+   compiled later in the cascade than Tailwind's utilities. */
+.modal-panel-lg {
+  max-width: 34rem;
+}
 
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -306,6 +313,19 @@ body {
 @keyframes scaleOut {
   from { opacity: 1; transform: scale(1); }
   to { opacity: 0; transform: scale(0.95); }
+}
+
+/* Roadmap card entrance — plays once on mount for a freshly created card.
+   Kept separate from the FLIP reposition animation in RoadmapPanel (that
+   one manipulates transform via inline styles on cards that already had a
+   previous position; a brand-new card has none, so FLIP skips it and this
+   keyframe is the only thing touching its transform). */
+.card-enter {
+  animation: cardEnter 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes cardEnter {
+  from { opacity: 0; transform: translateY(-10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Quick action cards in overview */

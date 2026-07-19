@@ -235,14 +235,33 @@ model RoadmapItem {
   projectId   String
   title       String
   description String?       @db.Text
+  // Free-text, not a fixed enum — a small set of presets would need its own
+  // management UI for a feature this size; the card just shows whatever
+  // string is set as a badge.
+  label       String?
+  dueDate     DateTime?
   status      RoadmapStatus @default(todo)
   order       Int           @default(0)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  comments RoadmapComment[]
 
   @@index([projectId, status])
+}
+
+// No author field — projects are single-owner (no team-member model exists
+// yet, see TODOS.md "Team" plan), so there's only ever one possible author.
+model RoadmapComment {
+  id            String   @id @default(cuid())
+  roadmapItemId String
+  text          String   @db.Text
+  createdAt     DateTime @default(now())
+
+  roadmapItem RoadmapItem @relation(fields: [roadmapItemId], references: [id], onDelete: Cascade)
+
+  @@index([roadmapItemId, createdAt])
 }
 
 // Single-use key a user generates from the web UI and passes to

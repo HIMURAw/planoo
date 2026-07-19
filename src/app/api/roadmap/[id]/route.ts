@@ -19,7 +19,14 @@ export async function PATCH(
   if (!existing || existing.project.userId !== session.user.id) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  const body = (await request.json()) as { title?: string; description?: string; status?: string; order?: number };
+  const body = (await request.json()) as {
+    title?: string;
+    description?: string;
+    status?: string;
+    order?: number;
+    label?: string | null;
+    dueDate?: string | null;
+  };
   const item = await prisma.roadmapItem.update({
     where: { id },
     data: {
@@ -27,6 +34,8 @@ export async function PATCH(
       ...(body.description !== undefined && { description: body.description.trim() || null }),
       ...(body.status !== undefined && { status: body.status as "todo" | "in_progress" | "done" }),
       ...(body.order !== undefined && { order: body.order }),
+      ...(body.label !== undefined && { label: body.label?.trim() || null }),
+      ...(body.dueDate !== undefined && { dueDate: body.dueDate ? new Date(body.dueDate) : null }),
     },
   });
   return NextResponse.json({ item });

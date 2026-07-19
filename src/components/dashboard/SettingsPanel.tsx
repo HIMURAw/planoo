@@ -100,7 +100,7 @@ export function SettingsPanel({ project, plan }: SettingsPanelProps) {
                 <div className="text-white font-medium text-lg">{project._count.links}</div>
               </div>
               <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                <div className="text-zinc-400 text-sm mb-1">Roadmap Görevleri</div>
+                <div className="text-zinc-400 text-sm mb-1">Yapılacak Görevler</div>
                 <div className="text-white font-medium text-lg">{project._count.roadmapItems}</div>
               </div>
             </div>

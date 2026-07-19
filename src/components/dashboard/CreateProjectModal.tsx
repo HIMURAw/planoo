@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useModalAnimation } from "@/lib/useModalAnimation";
 
 export interface CreateProjectFormData {
   name: string;
@@ -19,8 +20,6 @@ interface CreateProjectModalProps {
 }
 
 const EMPTY_FORM = { name: "", description: "", githubRepo: "", figmaFileKey: "" };
-// Keep in sync with the .modal-panel/.modal-overlay "closing" animation duration in globals.css.
-const CLOSE_ANIMATION_MS = 180;
 
 export function CreateProjectModal({
   isOpen,
@@ -33,34 +32,10 @@ export function CreateProjectModal({
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [shouldRender, setShouldRender] = useState(isOpen);
-  const [isClosing, setIsClosing] = useState(false);
-  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
-
-  // Keep the modal mounted through its exit animation instead of vanishing
-  // instantly when isOpen flips to false. Adjusted directly during render
-  // (React's documented pattern for deriving state from a prop change)
-  // rather than in an effect, since this must happen before paint.
-  if (isOpen !== prevIsOpen) {
-    setPrevIsOpen(isOpen);
-    if (isOpen) {
-      setShouldRender(true);
-      setIsClosing(false);
-    } else {
-      setIsClosing(true);
-    }
-  }
-
-  useEffect(() => {
-    if (!isClosing) return;
-    const timer = setTimeout(() => {
-      setShouldRender(false);
-      setIsClosing(false);
-      setForm(EMPTY_FORM);
-      setError(null);
-    }, CLOSE_ANIMATION_MS);
-    return () => clearTimeout(timer);
-  }, [isClosing]);
+  const { shouldRender, isClosing } = useModalAnimation(isOpen, () => {
+    setForm(EMPTY_FORM);
+    setError(null);
+  });
 
   useEffect(() => {
     if (!isOpen) return;

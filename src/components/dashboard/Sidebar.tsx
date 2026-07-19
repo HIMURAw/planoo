@@ -87,7 +87,7 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan, proje
     },
     {
       id: "roadmap",
-      label: "Roadmap",
+      label: "Yapılacaklar",
       count: activeProject?._count?.roadmapItems,
       icon: (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
