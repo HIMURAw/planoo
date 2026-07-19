@@ -167,12 +167,19 @@ export function DashboardClient({
             project={activeProject}
             initialTables={designedTables}
             onSchemaChanged={() => {
-              // Refresh project counts
+              // Refresh project counts AND the cached table list itself —
+              // SchemaBuilder seeds its canvas state once from `designedTables`
+              // on mount and never re-syncs afterward, so leaving the Schema
+              // tab and coming back fully remounts it from whatever's cached
+              // here. Only refreshing `_count` (the old behavior) left that
+              // cache stale, which made saved edits — table drags included —
+              // look like they'd been silently discarded on the next visit.
               if (activeProjectId) {
                 fetch(`/api/projects/${activeProjectId}`)
                   .then((r) => r.json())
                   .then((d) => {
                     if (d.project) {
+                      setDesignedTables(d.project.designedTables ?? []);
                       setProjects((prev) =>
                         prev.map((p) =>
                           p.id === activeProjectId

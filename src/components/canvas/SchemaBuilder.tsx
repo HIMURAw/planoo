@@ -136,13 +136,26 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
     });
   }, []);
 
-  const handleNodeDragStop = useCallback((_event: unknown, node: Node) => {
-    fetch(`/api/schema/tables/${node.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ posX: node.position.x, posY: node.position.y }),
-    });
-  }, []);
+  // Persists to the DB correctly on its own, but SchemaBuilder's `nodes`
+  // state is seeded once from the `initialTables` prop (see
+  // buildInitialNodes above) and never re-synced afterward. Switching away
+  // from the Schema tab and back fully unmounts/remounts this component
+  // (see DashboardClient's panel switch), which re-seeds `nodes` from
+  // whatever DashboardClient still has cached — so without reporting the
+  // new position back up via onSchemaChanged, a drag that saved just fine
+  // would still visually "snap back" the next time this panel remounts.
+  const handleNodeDragStop = useCallback(
+    (_event: unknown, node: Node) => {
+      fetch(`/api/schema/tables/${node.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ posX: node.position.x, posY: node.position.y }),
+      }).then(() => {
+        onSchemaChanged(nodes.some((n) => n.data.table.columns.length > 0));
+      });
+    },
+    [nodes, onSchemaChanged],
+  );
 
   const handleAddColumn = useCallback(
     async (tableId: string, column: Omit<DesignedColumn, "id">) => {
@@ -156,58 +169,52 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
         setError(data.error ?? "Kolon eklenemedi");
         return;
       }
-      setNodes((prev) => {
-        const next = prev.map((n) =>
-          n.id === tableId
-            ? { ...n, data: { table: { ...n.data.table, columns: [...n.data.table.columns, data.column!] } } }
-            : n,
-        );
-        onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
-        return next;
-      });
+      const next = nodes.map((n) =>
+        n.id === tableId
+          ? { ...n, data: { table: { ...n.data.table, columns: [...n.data.table.columns, data.column!] } } }
+          : n,
+      );
+      setNodes(next);
+      onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
     },
-    [onSchemaChanged],
+    [nodes, onSchemaChanged],
   );
 
   const handleDeleteColumn = useCallback(
     (tableId: string, columnId: string) => {
       fetch(`/api/schema/columns/${columnId}`, { method: "DELETE" });
-      setNodes((prev) => {
-        const next = prev.map((n) =>
-          n.id === tableId
-            ? { ...n, data: { table: { ...n.data.table, columns: n.data.table.columns.filter((c) => c.id !== columnId) } } }
-            : n,
-        );
-        onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
-        return next;
-      });
+      const next = nodes.map((n) =>
+        n.id === tableId
+          ? { ...n, data: { table: { ...n.data.table, columns: n.data.table.columns.filter((c) => c.id !== columnId) } } }
+          : n,
+      );
+      setNodes(next);
+      onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
     },
-    [onSchemaChanged],
+    [nodes, onSchemaChanged],
   );
 
   const handleDeleteTable = useCallback(
     (id: string) => {
       fetch(`/api/schema/tables/${id}`, { method: "DELETE" });
-      setNodes((prev) => {
-        const deletedName = prev.find((n) => n.id === id)?.data.table.name;
-        const next = prev
-          .filter((n) => n.id !== id)
-          .map((n) => ({
-            ...n,
-            data: {
-              table: {
-                ...n.data.table,
-                columns: n.data.table.columns.map((c) =>
-                  c.referencesTable === deletedName ? { ...c, isForeignKey: false, referencesTable: null, referencesColumn: null } : c,
-                ),
-              },
+      const deletedName = nodes.find((n) => n.id === id)?.data.table.name;
+      const next = nodes
+        .filter((n) => n.id !== id)
+        .map((n) => ({
+          ...n,
+          data: {
+            table: {
+              ...n.data.table,
+              columns: n.data.table.columns.map((c) =>
+                c.referencesTable === deletedName ? { ...c, isForeignKey: false, referencesTable: null, referencesColumn: null } : c,
+              ),
             },
-          }));
-        onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
-        return next;
-      });
+          },
+        }));
+      setNodes(next);
+      onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
     },
-    [onSchemaChanged],
+    [nodes, onSchemaChanged],
   );
 
   const canvasHandlers = useMemo(
@@ -313,7 +320,9 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
         setError(data.error ?? "Tablo oluşturulamadı");
         return;
       }
-      setNodes((prev) => [...prev, tableToNode(data.table!)]);
+      const next = [...nodes, tableToNode(data.table!)];
+      setNodes(next);
+      onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
       setNewTableName("");
     } finally {
       setCreatingTable(false);
