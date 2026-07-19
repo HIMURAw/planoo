@@ -26,6 +26,11 @@ export interface SchemaCanvasHandlers {
   // the declaration-order cycle described below).
   onUpdateNoteContent: (noteId: string, content: string) => void;
   onDeleteNote: (noteId: string) => void;
+  // Shown on each note as a small avatar — not per-node data, just static
+  // profile info, but it lives here too since it's the one context every
+  // node already reads from.
+  userName: string;
+  userImage: string | null;
 }
 
 // Node data only ever carries the table (see SchemaTableNodeData) — the

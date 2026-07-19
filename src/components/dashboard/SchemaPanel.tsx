@@ -9,6 +9,8 @@ interface SchemaPanelProps {
   project: ProjectView | null;
   initialTables: DesignedTable[];
   initialNotes: CanvasNote[];
+  userName: string;
+  userImage: string | null;
   onSchemaChanged: (hasAtLeastOneColumn: boolean) => void;
 }
 
@@ -36,7 +38,7 @@ const EXPORT_FORMAT_GROUPS = [
   },
 ] as const;
 
-export function SchemaPanel({ project, initialTables, initialNotes, onSchemaChanged }: SchemaPanelProps) {
+export function SchemaPanel({ project, initialTables, initialNotes, userName, userImage, onSchemaChanged }: SchemaPanelProps) {
   const [isExportOpen, setIsExportOpen] = useState(false);
 
   if (!project) return null;
@@ -104,6 +106,8 @@ export function SchemaPanel({ project, initialTables, initialNotes, onSchemaChan
           projectId={project.id}
           initialTables={initialTables}
           initialNotes={initialNotes}
+          userName={userName}
+          userImage={userImage}
           onSchemaChanged={onSchemaChanged}
         />
       </div>

@@ -52,6 +52,8 @@ interface SchemaBuilderProps {
   projectId: string;
   initialTables: DesignedTable[];
   initialNotes: CanvasNote[];
+  userName: string;
+  userImage: string | null;
   // Fires with whether there's at least one COLUMN anywhere, not just one
   // table — a table with zero columns gives /api/recheck nothing to match
   // against (real bug found live: an empty table marked setup "done").
@@ -70,8 +72,11 @@ function isTableNode(n: CanvasNodeType): n is SchemaTableNodeType {
 }
 
 const nodeTypes = { tableNode: SchemaTableNode, noteNode: SchemaNoteNode };
-const NOTE_WIDTH = 224;
-const NOTE_HEIGHT = 140;
+// Notes render as a small round avatar-with-a-note-badge by default (see
+// SchemaNoteNode) — only the full sticky-note box expands on hover/edit,
+// which doesn't need a size hint since it's an absolutely-positioned
+// overlay, not something React Flow lays out.
+const NOTE_COMPACT_SIZE = 44;
 
 // Legacy rows created before the canvas existed all default to (0,0) —
 // spread those out into a grid instead of stacking them on first render.
@@ -127,8 +132,8 @@ function noteToNode(note: CanvasNote): SchemaNoteNodeType {
     type: "noteNode",
     position: { x: note.posX, y: note.posY },
     data: { note },
-    initialWidth: NOTE_WIDTH,
-    initialHeight: NOTE_HEIGHT,
+    initialWidth: NOTE_COMPACT_SIZE,
+    initialHeight: NOTE_COMPACT_SIZE,
   };
 }
 
@@ -153,7 +158,7 @@ export function SchemaBuilder(props: SchemaBuilderProps) {
   );
 }
 
-function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaChanged }: SchemaBuilderProps) {
+function SchemaBuilderInner({ projectId, initialTables, initialNotes, userName, userImage, onSchemaChanged }: SchemaBuilderProps) {
   const [newTableName, setNewTableName] = useState("");
   const [creatingTable, setCreatingTable] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +170,10 @@ function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaCh
   const [queryPath, setQueryPath] = useState<QueryBuilderColumnRef[]>([]);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryCopied, setQueryCopied] = useState(false);
+  // "+ NOT" arms this instead of creating a note immediately — the next
+  // click on empty canvas (onPaneClick below) is what actually places it,
+  // at the exact clicked spot rather than always the viewport center.
+  const [isPlacingNote, setIsPlacingNote] = useState(false);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
 
@@ -384,49 +393,57 @@ function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaCh
     setTimeout(() => setQueryCopied(false), 1500);
   }
 
-  async function handleAddNote() {
-    const response = await fetch("/api/schema/notes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId }),
-    });
-    const data = (await response.json()) as { note?: CanvasNote; error?: string };
-    if (!response.ok || !data.note) {
-      setError(data.error ?? "Not oluşturulamadı");
-      return;
-    }
+  // "+ NOT" arms isPlacingNote instead of calling this directly — this runs
+  // from onPaneClick once the user actually clicks a spot on the canvas, so
+  // the note lands exactly where they meant it, not just at a guessed
+  // center point.
+  const handleAddNoteAt = useCallback(
+    async (flowPosition: { x: number; y: number }) => {
+      const response = await fetch("/api/schema/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const data = (await response.json()) as { note?: CanvasNote; error?: string };
+      if (!response.ok || !data.note) {
+        setError(data.error ?? "Not oluşturulamadı");
+        return;
+      }
 
-    // Same "spawn at the current viewport center" treatment as
-    // handleAddTable below, and for the same reason.
-    const wrapper = canvasWrapperRef.current;
-    const centerScreen = wrapper
-      ? (() => {
-          const rect = wrapper.getBoundingClientRect();
-          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-        })()
-      : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const centerFlow = screenToFlowPosition(centerScreen);
-    const note: CanvasNote = {
-      ...data.note,
-      posX: centerFlow.x - NOTE_WIDTH / 2,
-      posY: centerFlow.y - NOTE_HEIGHT / 2,
-    };
+      const note: CanvasNote = {
+        ...data.note,
+        posX: flowPosition.x - NOTE_COMPACT_SIZE / 2,
+        posY: flowPosition.y - NOTE_COMPACT_SIZE / 2,
+      };
 
-    const next = [...nodes, noteToNode(note)];
-    setNodes(next);
+      const next = [...nodes, noteToNode(note)];
+      setNodes(next);
 
-    // Waited on (not fire-and-forget) before onSchemaChanged, same reasoning
-    // as handleUpdateNoteContent below: onSchemaChanged triggers
-    // DashboardClient's refetch of this note's saved state, and firing that
-    // race-free of this write finishing is what actually matters — the
-    // setNodes() above already gives instant local feedback regardless.
-    await fetch(`/api/schema/notes/${note.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ posX: note.posX, posY: note.posY }),
-    });
-    onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
-  }
+      // Waited on (not fire-and-forget) before onSchemaChanged, same
+      // reasoning as handleUpdateNoteContent below: onSchemaChanged
+      // triggers DashboardClient's refetch of this note's saved state, and
+      // firing that race-free of this write finishing is what actually
+      // matters — the setNodes() above already gives instant local
+      // feedback regardless.
+      await fetch(`/api/schema/notes/${note.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ posX: note.posX, posY: note.posY }),
+      });
+      onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
+    },
+    [nodes, onSchemaChanged, projectId],
+  );
+
+  const handlePaneClick = useCallback(
+    (event: React.MouseEvent) => {
+      if (!isPlacingNote) return;
+      setIsPlacingNote(false);
+      const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      handleAddNoteAt(flowPosition);
+    },
+    [isPlacingNote, screenToFlowPosition, handleAddNoteAt],
+  );
 
   const handleUpdateNoteContent = useCallback(
     (noteId: string, content: string) => {
@@ -474,6 +491,8 @@ function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaCh
       queryColumnOrder,
       onUpdateNoteContent: handleUpdateNoteContent,
       onDeleteNote: handleDeleteNote,
+      userName,
+      userImage,
     }),
     [
       handleAddColumn,
@@ -484,6 +503,8 @@ function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaCh
       queryColumnOrder,
       handleUpdateNoteContent,
       handleDeleteNote,
+      userName,
+      userImage,
     ],
   );
 
@@ -682,8 +703,10 @@ function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaCh
             onEdgesDelete={handleEdgesDelete}
             onConnect={onConnect}
             onMoveEnd={handleMoveEnd}
+            onPaneClick={handlePaneClick}
             deleteKeyCode={["Backspace", "Delete"]}
             colorMode="dark"
+            className={isPlacingNote ? "cursor-crosshair" : undefined}
             {...(initialViewport ? { defaultViewport: initialViewport } : { fitView: true })}
             proOptions={{ hideAttribution: true }}
           >
@@ -712,9 +735,13 @@ function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaCh
                 </button>
                 <button
                   type="button"
-                  onClick={handleAddNote}
+                  onClick={() => setIsPlacingNote((v) => !v)}
                   title="Kanvasa not ekle"
-                  className="shrink-0 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 font-mono text-sm text-amber-300 transition-colors hover:bg-amber-400/20"
+                  className={`shrink-0 rounded-lg border px-3 py-1.5 font-mono text-sm transition-colors ${
+                    isPlacingNote
+                      ? "border-amber-400 bg-amber-400/30 text-amber-200"
+                      : "border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
+                  }`}
                 >
                   + NOT
                 </button>
@@ -723,14 +750,16 @@ function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaCh
 
             <Panel position="bottom-left">
               <p className="glass-panel rounded-lg px-3 py-1.5 text-[11px] text-zinc-400">
-                {isQueryMode
-                  ? "Sorguya eklemek için kolonlara sırayla tıklayın · seçimi kaldırmak için tekrar tıklayın"
-                  : (
-                    <>
-                      Bağlantı çizmek için bir kolonun kenarındaki noktayı sürükleyin · silmek için bağlantıyı seçip{" "}
-                      <kbd className="rounded bg-white/10 px-1 py-0.5 font-mono">Delete</kbd>
-                    </>
-                  )}
+                {isPlacingNote
+                  ? "Notu bırakmak istediğiniz yere tıklayın"
+                  : isQueryMode
+                    ? "Sorguya eklemek için kolonlara sırayla tıklayın · seçimi kaldırmak için tekrar tıklayın"
+                    : (
+                      <>
+                        Bağlantı çizmek için bir kolonun kenarındaki noktayı sürükleyin · silmek için bağlantıyı seçip{" "}
+                        <kbd className="rounded bg-white/10 px-1 py-0.5 font-mono">Delete</kbd>
+                      </>
+                    )}
               </p>
             </Panel>
 

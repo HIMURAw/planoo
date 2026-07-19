@@ -173,6 +173,8 @@ export function DashboardClient({
             project={activeProject}
             initialTables={designedTables}
             initialNotes={canvasNotes}
+            userName={userName}
+            userImage={userImage}
             onSchemaChanged={() => {
               // Refresh project counts AND the cached table/note lists
               // themselves — SchemaBuilder seeds its canvas state once from
