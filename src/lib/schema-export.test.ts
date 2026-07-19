@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { generateSql, generatePrismaSchema, generateTypeOrmEntities, mapSqlType } from "./schema-export";
+import {
+  generateSql,
+  generatePrismaSchema,
+  generateTypeOrmEntities,
+  generatePostgresSql,
+  generateSqliteSql,
+  generateDrizzleSchema,
+  generateSequelizeModels,
+  generateMongooseSchema,
+  mapSqlType,
+} from "./schema-export";
 
 describe("generateSql", () => {
   it("generates a CREATE TABLE statement with columns", () => {
@@ -256,5 +266,142 @@ describe("generateTypeOrmEntities", () => {
 
     expect(ts).toContain("This table has no columns yet");
     expect(ts).toContain("no column was marked as primary key");
+  });
+});
+
+const usersAndOrders = [
+  {
+    name: "users",
+    columns: [
+      { name: "id", dataType: "int", nullable: false, isPrimaryKey: true, isForeignKey: false, referencesTable: null, referencesColumn: null },
+      { name: "email", dataType: "varchar(255)", nullable: false, isPrimaryKey: false, isForeignKey: false, referencesTable: null, referencesColumn: null },
+    ],
+  },
+  {
+    name: "orders",
+    columns: [
+      { name: "id", dataType: "int", nullable: false, isPrimaryKey: true, isForeignKey: false, referencesTable: null, referencesColumn: null },
+      { name: "user_id", dataType: "int", nullable: false, isPrimaryKey: false, isForeignKey: true, referencesTable: "users", referencesColumn: "id" },
+      { name: "total", dataType: "decimal(10,2)", nullable: false, isPrimaryKey: false, isForeignKey: false, referencesTable: null, referencesColumn: null },
+      { name: "placed_at", dataType: "datetime", nullable: true, isPrimaryKey: false, isForeignKey: false, referencesTable: null, referencesColumn: null },
+    ],
+  },
+];
+
+describe("generatePostgresSql", () => {
+  it("quotes identifiers with double quotes and maps common types", () => {
+    const sql = generatePostgresSql(usersAndOrders);
+    expect(sql).toContain('CREATE TABLE "users" (');
+    expect(sql).toContain('"id" integer NOT NULL PRIMARY KEY');
+    expect(sql).toContain('"email" varchar(255) NOT NULL');
+    expect(sql).toContain('"total" numeric(10, 2) NOT NULL');
+    expect(sql).toContain('"placed_at" timestamp NULL');
+    expect(sql).toContain('FOREIGN KEY ("user_id") REFERENCES "users"("id")');
+  });
+
+  it("prefers jsonb over json", () => {
+    const sql = generatePostgresSql([
+      { name: "events", columns: [{ name: "payload", dataType: "json", nullable: true, isPrimaryKey: false, isForeignKey: false, referencesTable: null, referencesColumn: null }] },
+    ]);
+    expect(sql).toContain('"payload" jsonb');
+  });
+
+  it("flags an unrecognized type instead of guessing", () => {
+    const sql = generatePostgresSql([
+      { name: "weird", columns: [{ name: "x", dataType: "made_up_type", nullable: false, isPrimaryKey: false, isForeignKey: false, referencesTable: null, referencesColumn: null }] },
+    ]);
+    expect(sql).toContain("verify manually");
+  });
+});
+
+describe("generateSqliteSql", () => {
+  it("collapses MySQL's tiered int/text types down to SQLite's storage classes", () => {
+    const sql = generateSqliteSql(usersAndOrders);
+    expect(sql).toContain('CREATE TABLE "users" (');
+    expect(sql).toContain('"id" INTEGER NOT NULL PRIMARY KEY');
+    expect(sql).toContain('"email" TEXT NOT NULL');
+    expect(sql).toContain('"total" NUMERIC NOT NULL');
+    expect(sql).toContain("PRAGMA foreign_keys = ON");
+  });
+
+  it("stores date/time types as TEXT (SQLite has no native date storage class)", () => {
+    const sql = generateSqliteSql(usersAndOrders);
+    expect(sql).toContain('"placed_at" TEXT NULL');
+  });
+});
+
+describe("generateDrizzleSchema", () => {
+  it("generates mysqlTable definitions with correct builder calls", () => {
+    const ts = generateDrizzleSchema(usersAndOrders);
+    expect(ts).toContain('import { mysqlTable,');
+    expect(ts).toContain('export const users = mysqlTable("users", {');
+    expect(ts).toContain('id: int("id").primaryKey(),');
+    expect(ts).toContain('email: varchar("email", { length: 255 }).notNull(),');
+  });
+
+  it("emits .references() with a thunk pointing at the referenced table/column", () => {
+    const ts = generateDrizzleSchema(usersAndOrders);
+    expect(ts).toContain(".references(() => users.id)");
+  });
+
+  it("maps decimal(p,s) to precision/scale options", () => {
+    const ts = generateDrizzleSchema(usersAndOrders);
+    expect(ts).toContain('decimal("total", { precision: 10, scale: 2 })');
+  });
+
+  it("only imports the column builders it actually used", () => {
+    const ts = generateDrizzleSchema([
+      { name: "flags", columns: [{ name: "id", dataType: "int", nullable: false, isPrimaryKey: true, isForeignKey: false, referencesTable: null, referencesColumn: null }] },
+    ]);
+    expect(ts).toContain("import { mysqlTable, int } from");
+    expect(ts).not.toContain("varchar");
+  });
+});
+
+describe("generateSequelizeModels", () => {
+  it("generates Model.init() blocks with mapped DataTypes", () => {
+    const ts = generateSequelizeModels(usersAndOrders);
+    expect(ts).toContain("export class Users extends Model {}");
+    expect(ts).toContain("id: { type: DataTypes.INTEGER, primaryKey: true }");
+    expect(ts).toContain("email: { type: DataTypes.STRING(255), allowNull: false }");
+  });
+
+  it("emits a belongsTo association for each foreign key", () => {
+    const ts = generateSequelizeModels(usersAndOrders);
+    expect(ts).toContain('Orders.belongsTo(Users, { foreignKey: "user_id" });');
+  });
+
+  it("maps text size tiers to Sequelize's DataTypes.TEXT size hints", () => {
+    const ts = generateSequelizeModels([
+      { name: "posts", columns: [{ name: "body", dataType: "longtext", nullable: true, isPrimaryKey: false, isForeignKey: false, referencesTable: null, referencesColumn: null }] },
+    ]);
+    expect(ts).toContain('DataTypes.TEXT("long")');
+  });
+});
+
+describe("generateMongooseSchema", () => {
+  it("skips an 'id' primary key column in favor of MongoDB's automatic _id", () => {
+    const ts = generateMongooseSchema(usersAndOrders);
+    expect(ts).not.toMatch(/^\s*id: \{/m);
+    expect(ts).toContain("automatic _id field");
+  });
+
+  it("converts a foreign key column into an ObjectId ref instead of its raw SQL type", () => {
+    const ts = generateMongooseSchema(usersAndOrders);
+    expect(ts).toContain("user_id: { type: mongoose.Schema.Types.ObjectId, ref: \"Users\", required: true }");
+  });
+
+  it("maps decimal to Decimal128 and exports a named model per table", () => {
+    const ts = generateMongooseSchema(usersAndOrders);
+    expect(ts).toContain("total: { type: mongoose.Schema.Types.Decimal128, required: true }");
+    expect(ts).toContain('export const Users = mongoose.model("Users", usersSchema);');
+    expect(ts).toContain('export const Orders = mongoose.model("Orders", ordersSchema);');
+  });
+
+  it("keeps a non-'id'-named primary key as a regular field", () => {
+    const ts = generateMongooseSchema([
+      { name: "settings", columns: [{ name: "settings_key", dataType: "varchar(100)", nullable: false, isPrimaryKey: true, isForeignKey: false, referencesTable: null, referencesColumn: null }] },
+    ]);
+    expect(ts).toContain("settings_key: { type: String, required: true }");
   });
 });

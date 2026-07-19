@@ -10,10 +10,28 @@ interface SchemaPanelProps {
   onSchemaChanged: (hasAtLeastOneColumn: boolean) => void;
 }
 
-const EXPORT_FORMATS = [
-  { format: "sql", label: ".sql Olarak İndir" },
-  { format: "prisma", label: "Prisma Şeması Olarak İndir" },
-  { format: "typeorm", label: "TypeORM Entity Olarak İndir" },
+const EXPORT_FORMAT_GROUPS = [
+  {
+    label: "SQL",
+    formats: [
+      { format: "sql", label: "MySQL (.sql)" },
+      { format: "postgres", label: "PostgreSQL (.sql)" },
+      { format: "sqlite", label: "SQLite (.sql)" },
+    ],
+  },
+  {
+    label: "ORM",
+    formats: [
+      { format: "prisma", label: "Prisma Şeması" },
+      { format: "typeorm", label: "TypeORM Entity" },
+      { format: "drizzle", label: "Drizzle ORM" },
+      { format: "sequelize", label: "Sequelize" },
+    ],
+  },
+  {
+    label: "NoSQL",
+    formats: [{ format: "mongoose", label: "MongoDB (Mongoose)" }],
+  },
 ] as const;
 
 export function SchemaPanel({ project, initialTables, onSchemaChanged }: SchemaPanelProps) {
@@ -53,18 +71,25 @@ export function SchemaPanel({ project, initialTables, onSchemaChanged }: SchemaP
             <>
               <div className="fixed inset-0 z-40" onClick={() => setIsExportOpen(false)} />
               <div
-                className="absolute right-0 mt-2 w-56 glass-panel border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden p-1"
+                className="absolute right-0 mt-2 w-60 glass-panel border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden p-1"
                 style={{ animation: "scaleIn 0.15s ease", transformOrigin: "top right" }}
               >
-                {EXPORT_FORMATS.map(({ format, label }) => (
-                  <a
-                    key={format}
-                    href={`/api/schema/export?projectId=${project.id}&format=${format}`}
-                    onClick={() => setIsExportOpen(false)}
-                    className="block w-full text-left px-3 py-2 text-sm text-zinc-200 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-                  >
-                    {label}
-                  </a>
+                {EXPORT_FORMAT_GROUPS.map((group) => (
+                  <div key={group.label} className="mb-1 last:mb-0">
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      {group.label}
+                    </p>
+                    {group.formats.map(({ format, label }) => (
+                      <a
+                        key={format}
+                        href={`/api/schema/export?projectId=${project.id}&format=${format}`}
+                        onClick={() => setIsExportOpen(false)}
+                        className="block w-full text-left px-3 py-2 text-sm text-zinc-200 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                      >
+                        {label}
+                      </a>
+                    ))}
+                  </div>
                 ))}
               </div>
             </>
