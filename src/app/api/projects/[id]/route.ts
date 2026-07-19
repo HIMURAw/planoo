@@ -18,6 +18,7 @@ export async function GET(
       designedTables: { include: { columns: { orderBy: { order: "asc" } } }, orderBy: { createdAt: "asc" } },
       links: { orderBy: { updatedAt: "desc" } },
       roadmapItems: { orderBy: { order: "asc" } },
+      canvasNotes: { orderBy: { createdAt: "asc" } },
     },
   });
   if (!project) {

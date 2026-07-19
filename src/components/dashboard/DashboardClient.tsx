@@ -10,6 +10,7 @@ import { CostPanel } from "./CostPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { CreateProjectModal, type CreateProjectFormData } from "./CreateProjectModal";
 import type { DesignedTable } from "@/components/canvas/SchemaBuilder";
+import type { CanvasNote } from "@/components/canvas/SchemaNoteNode";
 import type { LinkView } from "@/components/canvas/types";
 import { getPlan, type PlanId } from "@/lib/pricing";
 
@@ -39,6 +40,7 @@ export function DashboardClient({
 
   // Project-specific data loaded on demand
   const [designedTables, setDesignedTables] = useState<DesignedTable[]>([]);
+  const [canvasNotes, setCanvasNotes] = useState<CanvasNote[]>([]);
   const [links, setLinks] = useState<LinkView[]>([]);
   const [projectDataLoaded, setProjectDataLoaded] = useState<string | null>(null);
 
@@ -52,6 +54,7 @@ export function DashboardClient({
         const data = await res.json();
         const project = data.project;
         setDesignedTables(project.designedTables ?? []);
+        setCanvasNotes(project.canvasNotes ?? []);
         setLinks(
           (project.links ?? []).map((l: {
             id: string;
@@ -81,6 +84,7 @@ export function DashboardClient({
       setActiveProjectId(projectId);
       setProjectDataLoaded(null);
       setDesignedTables([]);
+      setCanvasNotes([]);
       setLinks([]);
       await loadProjectData(projectId);
     },
@@ -106,6 +110,7 @@ export function DashboardClient({
       setActiveProjectId(newProject.id);
       setProjectDataLoaded(null);
       setDesignedTables([]);
+      setCanvasNotes([]);
       setLinks([]);
       setActivePanel("overview");
       return { ok: true };
@@ -167,20 +172,23 @@ export function DashboardClient({
           <SchemaPanel
             project={activeProject}
             initialTables={designedTables}
+            initialNotes={canvasNotes}
             onSchemaChanged={() => {
-              // Refresh project counts AND the cached table list itself —
-              // SchemaBuilder seeds its canvas state once from `designedTables`
-              // on mount and never re-syncs afterward, so leaving the Schema
-              // tab and coming back fully remounts it from whatever's cached
-              // here. Only refreshing `_count` (the old behavior) left that
-              // cache stale, which made saved edits — table drags included —
-              // look like they'd been silently discarded on the next visit.
+              // Refresh project counts AND the cached table/note lists
+              // themselves — SchemaBuilder seeds its canvas state once from
+              // these props on mount and never re-syncs afterward, so
+              // leaving the Schema tab and coming back fully remounts it
+              // from whatever's cached here. Only refreshing `_count` (the
+              // old behavior) left that cache stale, which made saved
+              // edits — table drags and notes included — look like they'd
+              // been silently discarded on the next visit.
               if (activeProjectId) {
                 fetch(`/api/projects/${activeProjectId}`)
                   .then((r) => r.json())
                   .then((d) => {
                     if (d.project) {
                       setDesignedTables(d.project.designedTables ?? []);
+                      setCanvasNotes(d.project.canvasNotes ?? []);
                       setProjects((prev) =>
                         prev.map((p) =>
                           p.id === activeProjectId

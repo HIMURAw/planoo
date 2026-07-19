@@ -17,9 +17,11 @@ import {
   type EdgeChange,
   type Connection,
   type OnConnect,
+  type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { SchemaTableNode, SchemaCanvasProvider, type SchemaTableNodeType } from "./SchemaTableNode";
+import { SchemaNoteNode, type SchemaNoteNodeType, type CanvasNote } from "./SchemaNoteNode";
 import {
   canAddTableToPath,
   generateJoinQuery,
@@ -49,13 +51,27 @@ export interface DesignedTable {
 interface SchemaBuilderProps {
   projectId: string;
   initialTables: DesignedTable[];
+  initialNotes: CanvasNote[];
   // Fires with whether there's at least one COLUMN anywhere, not just one
   // table — a table with zero columns gives /api/recheck nothing to match
   // against (real bug found live: an empty table marked setup "done").
   onSchemaChanged: (hasAtLeastOneColumn: boolean) => void;
 }
 
-const nodeTypes = { tableNode: SchemaTableNode };
+// Table nodes and sticky notes share one React Flow `nodes` array (xyflow
+// only supports a single controlled node list), distinguished by `type`.
+// Everywhere below that needs to read/mutate table-specific data narrows
+// with `n.type === "tableNode"` first — TS can't infer that from an id
+// match alone, since id is just a string, not a shared discriminant.
+type CanvasNodeType = SchemaTableNodeType | SchemaNoteNodeType;
+
+function isTableNode(n: CanvasNodeType): n is SchemaTableNodeType {
+  return n.type === "tableNode";
+}
+
+const nodeTypes = { tableNode: SchemaTableNode, noteNode: SchemaNoteNode };
+const NOTE_WIDTH = 224;
+const NOTE_HEIGHT = 140;
 
 // Legacy rows created before the canvas existed all default to (0,0) —
 // spread those out into a grid instead of stacking them on first render.
@@ -105,6 +121,17 @@ function buildInitialNodes(tables: DesignedTable[]): SchemaTableNodeType[] {
   });
 }
 
+function noteToNode(note: CanvasNote): SchemaNoteNodeType {
+  return {
+    id: note.id,
+    type: "noteNode",
+    position: { x: note.posX, y: note.posY },
+    data: { note },
+    initialWidth: NOTE_WIDTH,
+    initialHeight: NOTE_HEIGHT,
+  };
+}
+
 // The default, friction-free way to get a DB schema into planoo — replaces
 // the old "run an agent CLI against your real database" as the required
 // onboarding step (that's now optional/advanced, see TODOS.md). Tables live
@@ -126,17 +153,46 @@ export function SchemaBuilder(props: SchemaBuilderProps) {
   );
 }
 
-function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: SchemaBuilderProps) {
+function SchemaBuilderInner({ projectId, initialTables, initialNotes, onSchemaChanged }: SchemaBuilderProps) {
   const [newTableName, setNewTableName] = useState("");
   const [creatingTable, setCreatingTable] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nodes, setNodes] = useState<SchemaTableNodeType[]>(() => buildInitialNodes(initialTables));
+  const [nodes, setNodes] = useState<CanvasNodeType[]>(() => [
+    ...buildInitialNodes(initialTables),
+    ...initialNotes.map(noteToNode),
+  ]);
   const [isQueryMode, setIsQueryMode] = useState(false);
   const [queryPath, setQueryPath] = useState<QueryBuilderColumnRef[]>([]);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queryCopied, setQueryCopied] = useState(false);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
+
+  // Where the camera was left (pan + zoom), per project, so switching away
+  // from the Schema tab and back doesn't reset it — this component fully
+  // remounts on every tab switch (see the handleNodeDragStop comment below
+  // for why), and React Flow's `fitView` recenters on every mount by
+  // default regardless of where the user actually left the camera.
+  // sessionStorage rather than the database: this is ephemeral "where was
+  // I looking" UI state, not project data anyone else needs to see.
+  const viewportStorageKey = `planoo:schema-viewport:${projectId}`;
+  const [initialViewport] = useState<Viewport | null>(() => {
+    if (typeof window === "undefined") return null;
+    const saved = window.sessionStorage.getItem(viewportStorageKey);
+    if (!saved) return null;
+    try {
+      return JSON.parse(saved) as Viewport;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleMoveEnd = useCallback(
+    (_event: unknown, viewport: Viewport) => {
+      window.sessionStorage.setItem(viewportStorageKey, JSON.stringify(viewport));
+    },
+    [viewportStorageKey],
+  );
   // Edges are recomputed fresh from `nodes` every render (see the `edges`
   // useMemo below) rather than kept as their own state, since they're purely
   // derived from FK column data. Selection is the one piece of UI-only state
@@ -147,7 +203,7 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(new Set());
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((prev) => applyNodeChanges(changes, prev) as SchemaTableNodeType[]);
+    setNodes((prev) => applyNodeChanges(changes, prev) as CanvasNodeType[]);
   }, []);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -173,12 +229,13 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
   // would still visually "snap back" the next time this panel remounts.
   const handleNodeDragStop = useCallback(
     (_event: unknown, node: Node) => {
-      fetch(`/api/schema/tables/${node.id}`, {
+      const endpoint = node.type === "noteNode" ? `/api/schema/notes/${node.id}` : `/api/schema/tables/${node.id}`;
+      fetch(endpoint, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ posX: node.position.x, posY: node.position.y }),
       }).then(() => {
-        onSchemaChanged(nodes.some((n) => n.data.table.columns.length > 0));
+        onSchemaChanged(nodes.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
       });
     },
     [nodes, onSchemaChanged],
@@ -196,50 +253,57 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
         setError(data.error ?? "Kolon eklenemedi");
         return;
       }
-      const next = nodes.map((n) =>
-        n.id === tableId
-          ? { ...n, data: { table: { ...n.data.table, columns: [...n.data.table.columns, data.column!] } } }
-          : n,
-      );
+      const next = nodes.map((n) => {
+        if (!isTableNode(n) || n.id !== tableId) return n;
+        return { ...n, data: { table: { ...n.data.table, columns: [...n.data.table.columns, data.column!] } } };
+      });
       setNodes(next);
-      onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
+      onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
     },
     [nodes, onSchemaChanged],
   );
 
   const handleDeleteColumn = useCallback(
     (tableId: string, columnId: string) => {
-      fetch(`/api/schema/columns/${columnId}`, { method: "DELETE" });
-      const next = nodes.map((n) =>
-        n.id === tableId
-          ? { ...n, data: { table: { ...n.data.table, columns: n.data.table.columns.filter((c) => c.id !== columnId) } } }
-          : n,
-      );
+      const next = nodes.map((n) => {
+        if (!isTableNode(n) || n.id !== tableId) return n;
+        return { ...n, data: { table: { ...n.data.table, columns: n.data.table.columns.filter((c) => c.id !== columnId) } } };
+      });
       setNodes(next);
-      onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
+      // Chained after the DELETE resolves rather than fired alongside it —
+      // same reasoning as handleUpdateNoteContent's comment: onSchemaChanged
+      // triggers a refetch that could otherwise race the delete itself and
+      // re-cache the about-to-be-removed column.
+      fetch(`/api/schema/columns/${columnId}`, { method: "DELETE" }).then(() => {
+        onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
+      });
     },
     [nodes, onSchemaChanged],
   );
 
   const handleDeleteTable = useCallback(
     (id: string) => {
-      fetch(`/api/schema/tables/${id}`, { method: "DELETE" });
-      const deletedName = nodes.find((n) => n.id === id)?.data.table.name;
+      const deletedTableName = nodes.find((n): n is SchemaTableNodeType => isTableNode(n) && n.id === id)?.data.table.name;
       const next = nodes
         .filter((n) => n.id !== id)
-        .map((n) => ({
-          ...n,
-          data: {
-            table: {
-              ...n.data.table,
-              columns: n.data.table.columns.map((c) =>
-                c.referencesTable === deletedName ? { ...c, isForeignKey: false, referencesTable: null, referencesColumn: null } : c,
-              ),
+        .map((n) => {
+          if (!isTableNode(n)) return n;
+          return {
+            ...n,
+            data: {
+              table: {
+                ...n.data.table,
+                columns: n.data.table.columns.map((c) =>
+                  c.referencesTable === deletedTableName ? { ...c, isForeignKey: false, referencesTable: null, referencesColumn: null } : c,
+                ),
+              },
             },
-          },
-        }));
+          };
+        });
       setNodes(next);
-      onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
+      fetch(`/api/schema/tables/${id}`, { method: "DELETE" }).then(() => {
+        onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
+      });
     },
     [nodes, onSchemaChanged],
   );
@@ -269,12 +333,15 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
         return;
       }
 
-      const node = nodes.find((n) => n.id === tableId);
+      const node = nodes.find((n): n is SchemaTableNodeType => isTableNode(n) && n.id === tableId);
       const column = node?.data.table.columns.find((c) => c.id === columnId);
       if (!node || !column) return;
 
       const tableIdsInPath = new Set(queryPath.map((c) => c.tableId));
-      const tablesInPath = nodes.filter((n) => tableIdsInPath.has(n.id)).map((n) => toQueryBuilderTable(n.data.table));
+      const tablesInPath = nodes
+        .filter(isTableNode)
+        .filter((n) => tableIdsInPath.has(n.id))
+        .map((n) => toQueryBuilderTable(n.data.table));
 
       if (!canAddTableToPath(toQueryBuilderTable(node.data.table), tablesInPath)) {
         setQueryError(`"${node.data.table.name}" tablosu, seçili tablolarla bir foreign key ilişkisiyle bağlı değil.`);
@@ -297,7 +364,7 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
 
   const generatedQuery = useMemo(() => {
     if (queryPath.length === 0) return null;
-    return generateJoinQuery(queryPath, nodes.map((n) => toQueryBuilderTable(n.data.table)));
+    return generateJoinQuery(queryPath, nodes.filter(isTableNode).map((n) => toQueryBuilderTable(n.data.table)));
   }, [queryPath, nodes, toQueryBuilderTable]);
 
   function handleToggleQueryMode() {
@@ -317,6 +384,86 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
     setTimeout(() => setQueryCopied(false), 1500);
   }
 
+  async function handleAddNote() {
+    const response = await fetch("/api/schema/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    const data = (await response.json()) as { note?: CanvasNote; error?: string };
+    if (!response.ok || !data.note) {
+      setError(data.error ?? "Not oluşturulamadı");
+      return;
+    }
+
+    // Same "spawn at the current viewport center" treatment as
+    // handleAddTable below, and for the same reason.
+    const wrapper = canvasWrapperRef.current;
+    const centerScreen = wrapper
+      ? (() => {
+          const rect = wrapper.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        })()
+      : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const centerFlow = screenToFlowPosition(centerScreen);
+    const note: CanvasNote = {
+      ...data.note,
+      posX: centerFlow.x - NOTE_WIDTH / 2,
+      posY: centerFlow.y - NOTE_HEIGHT / 2,
+    };
+
+    const next = [...nodes, noteToNode(note)];
+    setNodes(next);
+
+    // Waited on (not fire-and-forget) before onSchemaChanged, same reasoning
+    // as handleUpdateNoteContent below: onSchemaChanged triggers
+    // DashboardClient's refetch of this note's saved state, and firing that
+    // race-free of this write finishing is what actually matters — the
+    // setNodes() above already gives instant local feedback regardless.
+    await fetch(`/api/schema/notes/${note.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ posX: note.posX, posY: note.posY }),
+    });
+    onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
+  }
+
+  const handleUpdateNoteContent = useCallback(
+    (noteId: string, content: string) => {
+      const next = nodes.map((n) =>
+        n.type === "noteNode" && n.id === noteId ? { ...n, data: { note: { ...n.data.note, content } } } : n,
+      );
+      setNodes(next);
+      // Found live: calling onSchemaChanged (which triggers a refetch of
+      // this note from the DB) before this PATCH had actually finished
+      // writing meant the refetch could grab the pre-edit content and
+      // overwrite it back into DashboardClient's cache — the edit itself
+      // was saved correctly, but the NEXT tab remount reverted to it
+      // anyway. Chaining onSchemaChanged after the PATCH resolves (not
+      // delaying the local setNodes() above, which is what actually gives
+      // instant visual feedback) closes that race.
+      fetch(`/api/schema/notes/${noteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      }).then(() => {
+        onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
+      });
+    },
+    [nodes, onSchemaChanged],
+  );
+
+  const handleDeleteNote = useCallback(
+    (noteId: string) => {
+      const next = nodes.filter((n) => n.id !== noteId);
+      setNodes(next);
+      fetch(`/api/schema/notes/${noteId}`, { method: "DELETE" }).then(() => {
+        onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
+      });
+    },
+    [nodes, onSchemaChanged],
+  );
+
   const canvasHandlers = useMemo(
     () => ({
       onAddColumn: handleAddColumn,
@@ -325,8 +472,19 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
       isQueryMode,
       onColumnClick: handleColumnClick,
       queryColumnOrder,
+      onUpdateNoteContent: handleUpdateNoteContent,
+      onDeleteNote: handleDeleteNote,
     }),
-    [handleAddColumn, handleDeleteColumn, handleDeleteTable, isQueryMode, handleColumnClick, queryColumnOrder],
+    [
+      handleAddColumn,
+      handleDeleteColumn,
+      handleDeleteTable,
+      isQueryMode,
+      handleColumnClick,
+      queryColumnOrder,
+      handleUpdateNoteContent,
+      handleDeleteNote,
+    ],
   );
 
   const onConnect: OnConnect = useCallback(
@@ -335,7 +493,7 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
       const targetColumnId = connection.targetHandle?.replace("target-", "");
       if (!sourceColumnId || !targetColumnId || sourceColumnId === targetColumnId || !connection.target) return;
 
-      const targetTable = nodes.find((n) => n.id === connection.target)?.data.table;
+      const targetTable = nodes.find((n): n is SchemaTableNodeType => isTableNode(n) && n.id === connection.target)?.data.table;
       const targetColumn = targetTable?.columns.find((c) => c.id === targetColumnId);
       if (!targetTable || !targetColumn) return;
 
@@ -346,19 +504,22 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
       });
 
       setNodes((prev) =>
-        prev.map((n) => ({
-          ...n,
-          data: {
-            table: {
-              ...n.data.table,
-              columns: n.data.table.columns.map((c) =>
-                c.id === sourceColumnId
-                  ? { ...c, isForeignKey: true, referencesTable: targetTable.name, referencesColumn: targetColumn.name }
-                  : c,
-              ),
+        prev.map((n) => {
+          if (!isTableNode(n)) return n;
+          return {
+            ...n,
+            data: {
+              table: {
+                ...n.data.table,
+                columns: n.data.table.columns.map((c) =>
+                  c.id === sourceColumnId
+                    ? { ...c, isForeignKey: true, referencesTable: targetTable.name, referencesColumn: targetColumn.name }
+                    : c,
+                ),
+              },
             },
-          },
-        })),
+          };
+        }),
       );
     },
     [nodes],
@@ -386,17 +547,20 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isForeignKey: false, referencesTable: null, referencesColumn: null }),
         });
-        next = next.map((n) => ({
-          ...n,
-          data: {
-            table: {
-              ...n.data.table,
-              columns: n.data.table.columns.map((c) =>
-                c.id === sourceColumnId ? { ...c, isForeignKey: false, referencesTable: null, referencesColumn: null } : c,
-              ),
+        next = next.map((n) => {
+          if (!isTableNode(n)) return n;
+          return {
+            ...n,
+            data: {
+              table: {
+                ...n.data.table,
+                columns: n.data.table.columns.map((c) =>
+                  c.id === sourceColumnId ? { ...c, isForeignKey: false, referencesTable: null, referencesColumn: null } : c,
+                ),
+              },
             },
-          },
-        }));
+          };
+        });
       }
       setNodes(next);
     },
@@ -405,9 +569,12 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
 
   const handleNodesDelete = useCallback(
     (deleted: Node[]) => {
-      for (const node of deleted) handleDeleteTable(node.id);
+      for (const node of deleted) {
+        if (node.type === "noteNode") handleDeleteNote(node.id);
+        else handleDeleteTable(node.id);
+      }
     },
-    [handleDeleteTable],
+    [handleDeleteTable, handleDeleteNote],
   );
 
   async function handleAddTable(e: React.FormEvent) {
@@ -456,7 +623,7 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
 
       const next = [...nodes, tableToNode(table)];
       setNodes(next);
-      onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
+      onSchemaChanged(next.filter(isTableNode).some((n) => n.data.table.columns.length > 0));
       setNewTableName("");
     } finally {
       setCreatingTable(false);
@@ -464,14 +631,15 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
   }
 
   const edges: Edge[] = useMemo(() => {
+    const tableNodes = nodes.filter(isTableNode);
     const columnIndex = new Map<string, { tableId: string; columnId: string }>();
-    for (const n of nodes) {
+    for (const n of tableNodes) {
       for (const c of n.data.table.columns) {
         columnIndex.set(`${n.data.table.name}.${c.name}`, { tableId: n.id, columnId: c.id });
       }
     }
     const result: Edge[] = [];
-    for (const n of nodes) {
+    for (const n of tableNodes) {
       for (const c of n.data.table.columns) {
         if (!c.isForeignKey || !c.referencesTable || !c.referencesColumn) continue;
         const target = columnIndex.get(`${c.referencesTable}.${c.referencesColumn}`);
@@ -513,13 +681,14 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
             onNodesDelete={handleNodesDelete}
             onEdgesDelete={handleEdgesDelete}
             onConnect={onConnect}
+            onMoveEnd={handleMoveEnd}
             deleteKeyCode={["Backspace", "Delete"]}
             colorMode="dark"
-            fitView
+            {...(initialViewport ? { defaultViewport: initialViewport } : { fitView: true })}
             proOptions={{ hideAttribution: true }}
           >
             <Background color="#3b82f620" gap={24} />
-            <Controls />
+            <Controls style={{ bottom: 56 }} />
             <MiniMap
               nodeColor="#1e3a5f"
               maskColor="rgba(5, 10, 20, 0.75)"
@@ -540,6 +709,14 @@ function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: Schem
                   className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 font-mono text-sm text-white shadow-[0_0_10px_rgba(59,130,246,0.3)] transition-colors hover:bg-blue-400 disabled:opacity-30 disabled:hover:bg-blue-500"
                 >
                   + TABLO EKLE
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddNote}
+                  title="Kanvasa not ekle"
+                  className="shrink-0 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 font-mono text-sm text-amber-300 transition-colors hover:bg-amber-400/20"
+                >
+                  + NOT
                 </button>
               </form>
             </Panel>

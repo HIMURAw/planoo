@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { type ProjectView } from "./DashboardLayout";
 import { SchemaBuilder, type DesignedTable } from "@/components/canvas/SchemaBuilder";
+import type { CanvasNote } from "@/components/canvas/SchemaNoteNode";
 
 interface SchemaPanelProps {
   project: ProjectView | null;
   initialTables: DesignedTable[];
+  initialNotes: CanvasNote[];
   onSchemaChanged: (hasAtLeastOneColumn: boolean) => void;
 }
 
@@ -34,7 +36,7 @@ const EXPORT_FORMAT_GROUPS = [
   },
 ] as const;
 
-export function SchemaPanel({ project, initialTables, onSchemaChanged }: SchemaPanelProps) {
+export function SchemaPanel({ project, initialTables, initialNotes, onSchemaChanged }: SchemaPanelProps) {
   const [isExportOpen, setIsExportOpen] = useState(false);
 
   if (!project) return null;
@@ -101,6 +103,7 @@ export function SchemaPanel({ project, initialTables, onSchemaChanged }: SchemaP
         <SchemaBuilder
           projectId={project.id}
           initialTables={initialTables}
+          initialNotes={initialNotes}
           onSchemaChanged={onSchemaChanged}
         />
       </div>

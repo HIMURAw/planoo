@@ -22,6 +22,10 @@ export interface SchemaCanvasHandlers {
   // 1-based position in the current query path, keyed by columnId — absent
   // for columns not yet selected.
   queryColumnOrder: Map<string, number>;
+  // Sticky notes (see SchemaNoteNode) — same context, same reason (avoids
+  // the declaration-order cycle described below).
+  onUpdateNoteContent: (noteId: string, content: string) => void;
+  onDeleteNote: (noteId: string) => void;
 }
 
 // Node data only ever carries the table (see SchemaTableNodeData) — the
@@ -34,7 +38,8 @@ export interface SchemaCanvasHandlers {
 const SchemaCanvasContext = createContext<SchemaCanvasHandlers | null>(null);
 export const SchemaCanvasProvider = SchemaCanvasContext.Provider;
 
-function useSchemaCanvasHandlers(): SchemaCanvasHandlers {
+// Exported for SchemaNoteNode too — both node types share this one context.
+export function useSchemaCanvasHandlers(): SchemaCanvasHandlers {
   const ctx = useContext(SchemaCanvasContext);
   if (!ctx) throw new Error("SchemaTableNode must be rendered inside a SchemaCanvasProvider");
   return ctx;
