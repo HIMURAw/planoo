@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { type ProjectView } from "./DashboardLayout";
 
 export interface RoadmapItemView {
@@ -24,6 +24,46 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
   const [newTitle, setNewTitle] = useState("");
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ column: ColumnId; index: number } | null>(null);
+  const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  const prevRectsRef = useRef(new Map<string, DOMRect>());
+
+  function setCardRef(id: string, el: HTMLDivElement | null) {
+    if (el) cardRefs.current.set(id, el);
+    else cardRefs.current.delete(id);
+  }
+
+  // FLIP animation: a drop reorders `items`, which re-renders every card at
+  // its new DOM position instantly — without this, cards visibly teleport
+  // instead of gliding there. Runs after every items change (not just
+  // drops): compare each card's rect now against the rect captured last
+  // time, and if it moved, play the transition from the old spot to the new
+  // one. Cards with no previous rect (freshly mounted) are left alone so
+  // newly added items don't animate in from some arbitrary origin.
+  useLayoutEffect(() => {
+    const newRects = new Map<string, DOMRect>();
+    cardRefs.current.forEach((el, id) => {
+      newRects.set(id, el.getBoundingClientRect());
+    });
+
+    cardRefs.current.forEach((el, id) => {
+      const prev = prevRectsRef.current.get(id);
+      const next = newRects.get(id);
+      if (!prev || !next) return;
+      const dx = prev.left - next.left;
+      const dy = prev.top - next.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+
+      el.style.transition = "none";
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+      el.getBoundingClientRect(); // force a reflow so the transform above is committed before...
+      requestAnimationFrame(() => {
+        el.style.transition = "transform 320ms cubic-bezier(0.22, 1, 0.36, 1)";
+        el.style.transform = "";
+      });
+    });
+
+    prevRectsRef.current = newRects;
+  }, [items]);
 
   useEffect(() => {
     if (!project) return;
@@ -248,11 +288,12 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
                           <div className="h-1 mb-3 rounded-full bg-violet-400/70" />
                         )}
                         <div
+                          ref={(el) => setCardRef(item.id, el)}
                           draggable
                           onDragStart={() => setDraggedId(item.id)}
                           onDragOver={(e) => handleCardDragOver(e, col.id, index)}
                           onDragEnd={handleDragEnd}
-                          className={`bg-white/5 hover:bg-white/[0.07] border border-white/5 hover:border-white/10 rounded-xl p-4 transition-all group cursor-grab active:cursor-grabbing shadow-sm ${draggedId === item.id ? "opacity-40" : ""}`}
+                          className={`bg-white/5 hover:bg-white/[0.07] border border-white/5 hover:border-white/10 rounded-xl p-4 transition-colors group cursor-grab active:cursor-grabbing shadow-sm ${draggedId === item.id ? "opacity-40" : ""}`}
                         >
                           <h4 className="text-sm font-medium text-white mb-2">{item.title}</h4>
                           {item.description && (

@@ -116,7 +116,7 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan, proje
         type="button"
         onClick={() => setIsCollapsed((c) => !c)}
         title={isCollapsed ? "Menüyü genişlet" : "Menüyü daralt"}
-        className="absolute -right-3 top-8 z-30 flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-[#0c0c14] text-zinc-400 shadow-lg transition-all duration-200 hover:text-white hover:border-violet-400/40 hover:bg-[#14141e] hover:scale-110"
+        className="absolute -right-3 top-8 z-40 flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-[#0c0c14] text-zinc-400 shadow-lg transition-all duration-200 hover:text-white hover:border-violet-400/40 hover:bg-[#14141e] hover:scale-110"
       >
         <svg
           className={`w-3.5 h-3.5 transition-transform duration-300 ${isCollapsed ? "rotate-180" : ""}`}
@@ -139,7 +139,7 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan, proje
       )}
 
       <div className={`h-16 flex items-center border-b border-white/5 overflow-hidden transition-all duration-300 ${isCollapsed ? "justify-center px-0" : "px-6"}`}>
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center ${isCollapsed ? "" : "gap-2"}`}>
           <Image
             src="/brands/logo-icon.png"
             alt="planoo"
@@ -179,7 +179,7 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan, proje
                   className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-gradient-to-b from-violet-400 to-fuchsia-400 rounded-r-full transition-opacity duration-300 ${isCollapsed ? "opacity-0" : "opacity-100"}`}
                 />
               )}
-              <div className="flex items-center gap-3 min-w-0">
+              <div className={`flex items-center min-w-0 ${isCollapsed ? "" : "gap-3"}`}>
                 <span className={`shrink-0 transition-colors duration-200 ${isActive ? 'text-violet-400' : 'text-zinc-500 group-hover:text-zinc-300'}`}>
                   {item.icon}
                 </span>
@@ -191,7 +191,7 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan, proje
               </div>
               {item.count !== undefined && (
                 <span
-                  className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap overflow-hidden transition-all duration-300 ${isActive ? 'bg-violet-500/20 text-violet-300' : 'bg-zinc-800 text-zinc-400'} ${isCollapsed ? "max-w-0 opacity-0 px-0" : "max-w-[40px] opacity-100"}`}
+                  className={`text-xs py-0.5 rounded-full whitespace-nowrap overflow-hidden transition-all duration-300 ${isActive ? 'bg-violet-500/20 text-violet-300' : 'bg-zinc-800 text-zinc-400'} ${isCollapsed ? "max-w-0 opacity-0 px-0" : "max-w-[40px] opacity-100 px-2"}`}
                 >
                   {item.count}
                 </span>
