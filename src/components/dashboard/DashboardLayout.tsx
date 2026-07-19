@@ -73,7 +73,7 @@ export function DashboardLayout({
         {/* Main Panel Content: floating glass area */}
         <main className="flex-1 overflow-y-auto relative glass-panel border border-white/5 rounded-2xl p-6">
           <div className="absolute inset-0 bg-gradient-to-br from-violet-500/3 via-transparent to-blue-500/3 pointer-events-none" />
-          <div className="relative z-10 h-full w-full">
+          <div className="relative h-full w-full">
             {children}
           </div>
         </main>

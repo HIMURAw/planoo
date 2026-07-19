@@ -15,11 +15,15 @@ interface RoadmapPanelProps {
   project: ProjectView | null;
 }
 
+type ColumnId = "todo" | "in_progress" | "done";
+
 export function RoadmapPanel({ project }: RoadmapPanelProps) {
   const [items, setItems] = useState<RoadmapItemView[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdding, setIsAdding] = useState<"todo" | "in_progress" | "done" | null>(null);
+  const [isAdding, setIsAdding] = useState<ColumnId | null>(null);
   const [newTitle, setNewTitle] = useState("");
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ column: ColumnId; index: number } | null>(null);
 
   useEffect(() => {
     if (!project) return;
@@ -40,9 +44,9 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
     fetchItems();
   }, [project]);
 
-  const handleAddItem = async (status: "todo" | "in_progress" | "done") => {
+  const handleAddItem = async (status: ColumnId) => {
     if (!newTitle.trim() || !project) return;
-    
+
     // Optimistic UI
     const newItem: RoadmapItemView = {
       id: crypto.randomUUID(),
@@ -70,9 +74,9 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
     }
   };
 
-  const handleStatusChange = async (id: string, newStatus: "todo" | "in_progress" | "done") => {
+  const handleStatusChange = async (id: string, newStatus: ColumnId) => {
     setItems(prev => prev.map(i => i.id === id ? { ...i, status: newStatus } : i));
-    
+
     try {
       await fetch(`/api/roadmap/${id}`, {
         method: 'PATCH',
@@ -83,6 +87,63 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
       console.error(err);
     }
   };
+
+  function handleCardDragOver(e: React.DragEvent, column: ColumnId, index: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isAfter = e.clientY > rect.top + rect.height / 2;
+    setDropTarget({ column, index: isAfter ? index + 1 : index });
+  }
+
+  function handleColumnDragOver(e: React.DragEvent, column: ColumnId, columnLength: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    // Only over empty space below the last card — per-card handler owns
+    // anything above that.
+    setDropTarget((prev) => (prev?.column === column ? prev : { column, index: columnLength }));
+  }
+
+  function handleDrop(e: React.DragEvent, column: ColumnId) {
+    e.preventDefault();
+    const id = draggedId;
+    const target = dropTarget;
+    setDraggedId(null);
+    setDropTarget(null);
+    if (!id || !target) return;
+
+    setItems((prev) => {
+      const dragged = prev.find((i) => i.id === id);
+      if (!dragged) return prev;
+
+      const rest = prev.filter((i) => i.id !== id);
+      const columnItems = rest.filter((i) => i.status === column).sort((a, b) => a.order - b.order);
+      const otherItems = rest.filter((i) => i.status !== column);
+
+      const insertAt = Math.min(target.index, columnItems.length);
+      columnItems.splice(insertAt, 0, { ...dragged, status: column });
+
+      const renumbered = columnItems.map((item, idx) => ({ ...item, order: idx }));
+
+      for (const item of renumbered) {
+        const original = prev.find((p) => p.id === item.id);
+        if (!original || original.status !== item.status || original.order !== item.order) {
+          fetch(`/api/roadmap/${item.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: item.status, order: item.order }),
+          });
+        }
+      }
+
+      return [...otherItems, ...renumbered];
+    });
+  }
+
+  function handleDragEnd() {
+    setDraggedId(null);
+    setDropTarget(null);
+  }
 
   if (!project) return null;
 
@@ -102,24 +163,30 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
           Roadmap
         </h1>
         <p className="text-sm text-zinc-400">
-          Projenizin geliştirme sürecini ve görevlerini takip edin.
+          Projenizin geliştirme sürecini ve görevlerini takip edin. Kartları sürükleyerek durumunu veya sırasını değiştirebilirsiniz.
         </p>
       </div>
 
       <div className="flex-1 flex gap-6 overflow-x-auto pb-4 min-h-0">
         {columns.map(col => {
           const colItems = items.filter(i => i.status === col.id).sort((a,b) => a.order - b.order);
-          const borderColor = 
-            col.color === "zinc" ? "border-zinc-500/30" : 
-            col.color === "amber" ? "border-amber-500/30" : 
+          const borderColor =
+            col.color === "zinc" ? "border-zinc-500/30" :
+            col.color === "amber" ? "border-amber-500/30" :
             "border-emerald-500/30";
-          const headerTextColor = 
-            col.color === "zinc" ? "text-zinc-300" : 
-            col.color === "amber" ? "text-amber-400" : 
+          const headerTextColor =
+            col.color === "zinc" ? "text-zinc-300" :
+            col.color === "amber" ? "text-amber-400" :
             "text-emerald-400";
-            
+          const isDropColumn = dropTarget?.column === col.id;
+
           return (
-            <div key={col.id} className={`w-80 flex-shrink-0 flex flex-col glass-panel rounded-2xl border ${borderColor} overflow-hidden`}>
+            <div
+              key={col.id}
+              onDragOver={(e) => handleColumnDragOver(e, col.id, colItems.length)}
+              onDrop={(e) => handleDrop(e, col.id)}
+              className={`w-80 flex-shrink-0 flex flex-col glass-panel rounded-2xl border transition-colors ${isDropColumn ? "border-violet-400/50 bg-violet-500/[0.03]" : borderColor} overflow-hidden`}
+            >
               <div className="p-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className={`font-semibold ${headerTextColor}`}>{col.label}</span>
@@ -127,7 +194,7 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
                     {colItems.length}
                   </span>
                 </div>
-                <button 
+                <button
                   onClick={() => setIsAdding(col.id)}
                   className="p-1 hover:bg-white/10 rounded-md transition-colors text-zinc-400 hover:text-white"
                 >
@@ -140,7 +207,7 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
               <div className="flex-1 p-3 overflow-y-auto space-y-3">
                 {isAdding === col.id && (
                   <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-                    <input 
+                    <input
                       type="text"
                       autoFocus
                       value={newTitle}
@@ -150,13 +217,13 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
                       className="w-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none mb-3"
                     />
                     <div className="flex justify-end gap-2">
-                      <button 
+                      <button
                         onClick={() => { setIsAdding(null); setNewTitle(""); }}
                         className="text-xs text-zinc-400 hover:text-white px-2 py-1"
                       >
                         İptal
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleAddItem(col.id)}
                         className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded-md transition-colors"
                       >
@@ -168,35 +235,58 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
 
                 {loading ? (
                   <div className="text-center py-8 text-sm text-zinc-500">Yükleniyor...</div>
-                ) : colItems.map(item => (
-                  <div key={item.id} className="bg-white/5 hover:bg-white/[0.07] border border-white/5 hover:border-white/10 rounded-xl p-4 transition-all group cursor-pointer shadow-sm">
-                    <h4 className="text-sm font-medium text-white mb-2">{item.title}</h4>
-                    {item.description && (
-                      <p className="text-xs text-zinc-400 mb-3 line-clamp-2">{item.description}</p>
-                    )}
-                    
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="text-xs text-zinc-500">Durum Değiştir:</div>
-                      <div className="flex gap-1">
-                        {col.id !== "todo" && (
-                          <button onClick={() => handleStatusChange(item.id, "todo")} className="p-1 rounded bg-zinc-500/20 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-500/40" title="Yapılacaklar">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                          </button>
-                        )}
-                        {col.id !== "in_progress" && (
-                          <button onClick={() => handleStatusChange(item.id, "in_progress")} className="p-1 rounded bg-amber-500/20 text-amber-400 hover:text-amber-300 hover:bg-amber-500/40" title="Devam Ediyor">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" /></svg>
-                          </button>
-                        )}
-                        {col.id !== "done" && (
-                          <button onClick={() => handleStatusChange(item.id, "done")} className="p-1 rounded bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/40" title="Tamamlandı">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                          </button>
-                        )}
+                ) : (
+                  <>
+                    {colItems.length === 0 && !isDropColumn && (
+                      <div className="text-center py-8 text-xs text-zinc-600 border border-dashed border-white/5 rounded-xl">
+                        Görev yok
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    )}
+                    {colItems.map((item, index) => (
+                      <div key={item.id}>
+                        {isDropColumn && dropTarget?.index === index && (
+                          <div className="h-1 mb-3 rounded-full bg-violet-400/70" />
+                        )}
+                        <div
+                          draggable
+                          onDragStart={() => setDraggedId(item.id)}
+                          onDragOver={(e) => handleCardDragOver(e, col.id, index)}
+                          onDragEnd={handleDragEnd}
+                          className={`bg-white/5 hover:bg-white/[0.07] border border-white/5 hover:border-white/10 rounded-xl p-4 transition-all group cursor-grab active:cursor-grabbing shadow-sm ${draggedId === item.id ? "opacity-40" : ""}`}
+                        >
+                          <h4 className="text-sm font-medium text-white mb-2">{item.title}</h4>
+                          {item.description && (
+                            <p className="text-xs text-zinc-400 mb-3 line-clamp-2">{item.description}</p>
+                          )}
+
+                          <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="text-xs text-zinc-500">Durum Değiştir:</div>
+                            <div className="flex gap-1">
+                              {col.id !== "todo" && (
+                                <button onClick={() => handleStatusChange(item.id, "todo")} className="p-1 rounded bg-zinc-500/20 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-500/40" title="Yapılacaklar">
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                                </button>
+                              )}
+                              {col.id !== "in_progress" && (
+                                <button onClick={() => handleStatusChange(item.id, "in_progress")} className="p-1 rounded bg-amber-500/20 text-amber-400 hover:text-amber-300 hover:bg-amber-500/40" title="Devam Ediyor">
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" /></svg>
+                                </button>
+                              )}
+                              {col.id !== "done" && (
+                                <button onClick={() => handleStatusChange(item.id, "done")} className="p-1 rounded bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/40" title="Tamamlandı">
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {isDropColumn && dropTarget?.index === colItems.length && (
+                      <div className="h-1 rounded-full bg-violet-400/70" />
+                    )}
+                  </>
+                )}
               </div>
             </div>
           );

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { type ActivePanel, type ProjectView } from "./DashboardLayout";
 
@@ -13,8 +13,47 @@ interface SidebarProps {
   projectLimit: number | null;
 }
 
+const COLLAPSED_WIDTH = 76;
+const DEFAULT_WIDTH = 260;
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 440;
+
 export function Sidebar({ activePanel, onPanelChange, activeProject, plan, projectCount, projectLimit }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef({ startX: 0, startWidth: DEFAULT_WIDTH });
+
+  const handleResizeMove = useCallback((e: MouseEvent) => {
+    const delta = e.clientX - resizeStartRef.current.startX;
+    const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, resizeStartRef.current.startWidth + delta));
+    setWidth(next);
+  }, []);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", handleResizeMove);
+    document.addEventListener("mouseup", handleResizeEnd);
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleResizeMove);
+      document.removeEventListener("mouseup", handleResizeEnd);
+    };
+  }, [isResizing, handleResizeMove, handleResizeEnd]);
+
+  function handleResizeStart(e: React.MouseEvent) {
+    if (isCollapsed) return;
+    e.preventDefault();
+    resizeStartRef.current = { startX: e.clientX, startWidth: width };
+    setIsResizing(true);
+  }
 
   const menuItems: { id: ActivePanel; label: string; icon: React.ReactNode; count?: number }[] = [
     {
@@ -70,7 +109,8 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan, proje
 
   return (
     <div
-      className={`relative flex flex-col flex-shrink-0 glass-panel border-r border-white/5 z-20 transition-all duration-300 ease-in-out ${isCollapsed ? "w-[76px]" : "w-[260px]"}`}
+      style={{ width: isCollapsed ? COLLAPSED_WIDTH : width }}
+      className={`relative flex flex-col flex-shrink-0 glass-panel border-r border-white/5 z-20 ease-in-out ${isResizing ? "" : "transition-all duration-300"}`}
     >
       <button
         type="button"
@@ -87,6 +127,16 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan, proje
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
         </svg>
       </button>
+
+      {!isCollapsed && (
+        <div
+          onMouseDown={handleResizeStart}
+          title="Sürükleyerek yeniden boyutlandır"
+          className={`group absolute -right-1 top-0 z-30 h-full w-2 cursor-ew-resize ${isResizing ? "bg-violet-400/20" : ""}`}
+        >
+          <div className="absolute right-[3px] top-1/2 h-10 w-1 -translate-y-1/2 rounded-full bg-white/10 transition-colors group-hover:bg-violet-400/60" />
+        </div>
+      )}
 
       <div className={`h-16 flex items-center border-b border-white/5 overflow-hidden transition-all duration-300 ${isCollapsed ? "justify-center px-0" : "px-6"}`}>
         <div className="flex items-center gap-2">
