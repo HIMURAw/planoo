@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { type ProjectView } from "./DashboardLayout";
 import { SchemaBuilder, type DesignedTable } from "@/components/canvas/SchemaBuilder";
 
@@ -9,7 +10,15 @@ interface SchemaPanelProps {
   onSchemaChanged: (hasAtLeastOneColumn: boolean) => void;
 }
 
+const EXPORT_FORMATS = [
+  { format: "sql", label: ".sql Olarak İndir" },
+  { format: "prisma", label: "Prisma Şeması Olarak İndir" },
+  { format: "typeorm", label: "TypeORM Entity Olarak İndir" },
+] as const;
+
 export function SchemaPanel({ project, initialTables, onSchemaChanged }: SchemaPanelProps) {
+  const [isExportOpen, setIsExportOpen] = useState(false);
+
   if (!project) return null;
 
   return (
@@ -26,16 +35,40 @@ export function SchemaPanel({ project, initialTables, onSchemaChanged }: SchemaP
             Projenizin veritabanı tablolarını ve ilişkilerini görsel olarak tasarlayın.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <a
-            href="/api/schema/export"
+        <div className="relative">
+          <button
+            onClick={() => setIsExportOpen((v) => !v)}
             className="flex items-center gap-2 px-4 py-2 glass-panel text-sm font-medium text-white hover:bg-white/5 transition-colors border border-white/10 hover:border-blue-500/50 rounded-lg"
           >
             <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            .sql Olarak İndir
-          </a>
+            Şemayı İndir
+            <svg className={`w-4 h-4 text-zinc-500 transition-transform ${isExportOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {isExportOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setIsExportOpen(false)} />
+              <div
+                className="absolute right-0 mt-2 w-56 glass-panel border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden p-1"
+                style={{ animation: "scaleIn 0.15s ease", transformOrigin: "top right" }}
+              >
+                {EXPORT_FORMATS.map(({ format, label }) => (
+                  <a
+                    key={format}
+                    href={`/api/schema/export?projectId=${project.id}&format=${format}`}
+                    onClick={() => setIsExportOpen(false)}
+                    className="block w-full text-left px-3 py-2 text-sm text-zinc-200 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                  >
+                    {label}
+                  </a>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
