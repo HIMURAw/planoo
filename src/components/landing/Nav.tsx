@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 
 interface NavProps {
   onSignIn: () => Promise<void>;
@@ -28,7 +29,7 @@ export function Nav({ onSignIn, onSignOut, user }: NavProps) {
     <header className="sticky top-4 z-50 mx-auto w-[calc(100%-2rem)] max-w-5xl">
       <div className="glass-panel flex items-center justify-between px-5 py-3">
         <span className="flex items-center gap-2 text-lg font-semibold tracking-tight text-white">
-          <span className="h-2 w-2 rounded-full bg-linear-to-br from-violet-400 to-blue-400" />
+          <Image src="/brands/logo-icon.png" alt="planoo" width={196} height={126} priority className="h-6 w-auto object-contain" />
           planoo
         </span>
         <nav className="hidden items-center gap-8 text-sm text-zinc-300 sm:flex">

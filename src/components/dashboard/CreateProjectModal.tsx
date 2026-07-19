@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export interface CreateProjectFormData {
   name: string;
@@ -19,6 +19,8 @@ interface CreateProjectModalProps {
 }
 
 const EMPTY_FORM = { name: "", description: "", githubRepo: "", figmaFileKey: "" };
+// Keep in sync with the .modal-panel/.modal-overlay "closing" animation duration in globals.css.
+const CLOSE_ANIMATION_MS = 180;
 
 export function CreateProjectModal({
   isOpen,
@@ -31,16 +33,39 @@ export function CreateProjectModal({
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shouldRender, setShouldRender] = useState(isOpen);
+  const [isClosing, setIsClosing] = useState(false);
 
-  if (!isOpen) return null;
+  // Keep the modal mounted through its exit animation instead of vanishing
+  // instantly when isOpen flips to false.
+  useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      setIsClosing(false);
+      return;
+    }
+    setIsClosing(true);
+    const timer = setTimeout(() => {
+      setShouldRender(false);
+      setIsClosing(false);
+      setForm(EMPTY_FORM);
+      setError(null);
+    }, CLOSE_ANIMATION_MS);
+    return () => clearTimeout(timer);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [isOpen, onClose]);
+
+  if (!shouldRender) return null;
 
   const limitReached = projectLimit !== null && projectCount >= projectLimit;
-
-  function close() {
-    setForm(EMPTY_FORM);
-    setError(null);
-    onClose();
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,16 +83,18 @@ export function CreateProjectModal({
         setError(result.message ?? "Proje oluşturulamadı.");
         return;
       }
-      close();
+      onClose();
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={close} />
-      <div className="glass-panel w-full max-w-md relative z-10 border border-white/10 shadow-2xl p-6 rounded-2xl">
+    <div className={`modal-overlay${isClosing ? " closing" : ""}`} onClick={onClose}>
+      <div
+        className={`modal-panel${isClosing ? " closing" : ""}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h3 className="text-xl font-bold text-white mb-1">Yeni Proje Oluştur</h3>
         <p className="text-sm text-zinc-400 mb-6">
           Projeniz için bir isim girin. GitHub reposu ve Figma dosyası isteğe bağlıdır, sonradan da eklenebilir.
@@ -132,7 +159,7 @@ export function CreateProjectModal({
           </div>
 
           <div className="mt-2 flex items-center justify-end gap-3">
-            <button type="button" onClick={close} className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors">
               İptal
             </button>
             <button

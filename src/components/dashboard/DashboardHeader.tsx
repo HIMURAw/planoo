@@ -60,7 +60,10 @@ export function DashboardHeader({
           {isProfileOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setIsProfileOpen(false)} />
-              <div className="absolute right-0 mt-2 w-48 glass-panel border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+              <div
+                className="absolute right-0 mt-2 w-48 glass-panel border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden"
+                style={{ animation: "scaleIn 0.15s ease", transformOrigin: "top right" }}
+              >
                 <div className="p-3 border-b border-white/5">
                   <p className="text-sm font-medium text-white truncate">{userName}</p>
                 </div>

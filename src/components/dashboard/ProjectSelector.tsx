@@ -35,7 +35,10 @@ export function ProjectSelector({ projects, activeProject, onProjectChange, onOp
         {isOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-            <div className="absolute left-0 mt-2 w-64 glass-panel border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col max-h-96">
+            <div
+              className="absolute left-0 mt-2 w-64 glass-panel border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col max-h-96"
+              style={{ animation: "scaleIn 0.15s ease", transformOrigin: "top left" }}
+            >
               <div className="p-2 overflow-y-auto">
                 <div className="px-2 py-1.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Projelerim</div>
                 {projects.map(p => (
