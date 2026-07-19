@@ -98,11 +98,21 @@ interface FigmaFetchOptions {
   retriesOn429?: number;
 }
 
+// Figma's own Retry-After on a 429 can be minutes (a real per-minute/hour
+// quota reset, not a momentary blip) — honoring it verbatim turned a single
+// interactive "Yeniden Kontrol Et" click into a multi-minute hang with no
+// feedback, which from the user's side looks identical to the button doing
+// nothing at all (found live: a recheck call sat for 3.8 minutes before
+// finally resolving). Capping the wait means we fail fast with a clear
+// rate-limit error instead, rather than blocking a request a human is
+// sitting in front of for however long Figma says.
+const MAX_RETRY_WAIT_MS = 3000;
+
 /**
  * Wraps `fetch` against the Figma REST API with the error handling locked
  * in during /plan-ceo-review Section 2 (Error & Rescue Map):
  *   - 401 -> handled by getValidFigmaAccessToken's caller (reauth)
- *   - 429 -> backoff + retry
+ *   - 429 -> bounded backoff + retry (see MAX_RETRY_WAIT_MS above)
  */
 export async function figmaFetch(
   path: string,
@@ -119,7 +129,8 @@ export async function figmaFetch(
 
     if (response.status === 429 && attempt < maxRetries) {
       const retryAfterHeader = response.headers.get("Retry-After");
-      const retryAfterMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : 2 ** attempt * 1000;
+      const requestedMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : 2 ** attempt * 1000;
+      const retryAfterMs = Math.min(requestedMs, MAX_RETRY_WAIT_MS);
       await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
       attempt += 1;
       continue;

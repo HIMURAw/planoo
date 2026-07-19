@@ -76,16 +76,13 @@ export async function POST(request: Request) {
     figmaNodes = await fetchFigmaFileNodes(project.figmaFileKey, accessToken);
   } catch (err) {
     if (err instanceof FigmaFileFetchError) {
-      return NextResponse.json(
-        {
-          error: "figma_file_fetch_failed",
-          message:
-            err.status === 404 || err.status === 403
-              ? "Bu Figma dosyasına erişilemiyor — dosya anahtarını kontrol et ya da dosyayı Figma hesabınla paylaşıldığından emin ol."
-              : "Figma dosyası okunamadı — az sonra tekrar dene.",
-        },
-        { status: 400 },
-      );
+      const message =
+        err.status === 429
+          ? "Figma API kullanım limitine takıldık — birkaç dakika sonra tekrar dene."
+          : err.status === 404 || err.status === 403
+            ? "Bu Figma dosyasına erişilemiyor — dosya anahtarını kontrol et ya da dosyayı Figma hesabınla paylaşıldığından emin ol."
+            : "Figma dosyası okunamadı — az sonra tekrar dene.";
+      return NextResponse.json({ error: "figma_file_fetch_failed", message }, { status: 400 });
     }
     throw err;
   }
