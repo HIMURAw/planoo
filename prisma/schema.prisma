@@ -220,35 +220,50 @@ model Project {
   designedTables DesignedTable[]
   links          Link[]
   roadmapItems   RoadmapItem[]
+  roadmapColumns RoadmapColumn[]
 
   @@unique([userId, name])
 }
 
-enum RoadmapStatus {
-  todo
-  in_progress
-  done
+// A Trello-style list. Board columns used to be a fixed 3-value enum
+// (todo/in_progress/done) on RoadmapItem directly — replaced by this so
+// users can add/rename/reorder their own lists instead of being stuck with
+// exactly those three. See migration 20260719_* for how existing
+// enum-based data was backfilled into real columns instead of being lost.
+model RoadmapColumn {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  items   RoadmapItem[]
+
+  @@index([projectId, order])
 }
 
 model RoadmapItem {
-  id          String        @id @default(cuid())
+  id          String    @id @default(cuid())
   projectId   String
+  columnId    String
   title       String
-  description String?       @db.Text
+  description String?   @db.Text
   // Free-text, not a fixed enum — a small set of presets would need its own
   // management UI for a feature this size; the card just shows whatever
   // string is set as a badge.
   label       String?
   dueDate     DateTime?
-  status      RoadmapStatus @default(todo)
-  order       Int           @default(0)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  column   RoadmapColumn    @relation(fields: [columnId], references: [id], onDelete: Cascade)
   comments RoadmapComment[]
 
-  @@index([projectId, status])
+  @@index([projectId, columnId])
 }
 
 // No author field — projects are single-owner (no team-member model exists

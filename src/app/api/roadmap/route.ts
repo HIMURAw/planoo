@@ -29,22 +29,25 @@ export async function POST(request: Request) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const body = (await request.json()) as { projectId?: string; title?: string; description?: string; status?: string };
-  if (!body.projectId || !body.title?.trim()) {
-    return NextResponse.json({ error: "missing_fields", message: "projectId ve title gerekli." }, { status: 400 });
+  const body = (await request.json()) as { projectId?: string; columnId?: string; title?: string; description?: string };
+  if (!body.projectId || !body.columnId || !body.title?.trim()) {
+    return NextResponse.json({ error: "missing_fields", message: "projectId, columnId ve title gerekli." }, { status: 400 });
   }
-  // Verify ownership
-  const project = await prisma.project.findFirst({ where: { id: body.projectId, userId: session.user.id } });
-  if (!project) {
+  // Verify ownership (project and column both)
+  const [project, column] = await Promise.all([
+    prisma.project.findFirst({ where: { id: body.projectId, userId: session.user.id } }),
+    prisma.roadmapColumn.findFirst({ where: { id: body.columnId, projectId: body.projectId } }),
+  ]);
+  if (!project || !column) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
-  const count = await prisma.roadmapItem.count({ where: { projectId: body.projectId } });
+  const count = await prisma.roadmapItem.count({ where: { columnId: body.columnId } });
   const item = await prisma.roadmapItem.create({
     data: {
       projectId: body.projectId,
+      columnId: body.columnId,
       title: body.title.trim(),
       description: body.description?.trim() || null,
-      status: (body.status as "todo" | "in_progress" | "done") || "todo",
       order: count,
     },
   });

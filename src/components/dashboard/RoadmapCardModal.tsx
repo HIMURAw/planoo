@@ -12,16 +12,26 @@ export interface RoadmapCommentView {
 
 interface RoadmapCardModalProps {
   item: RoadmapItemView | null;
+  columnName: string;
   onClose: () => void;
   onUpdate: (id: string, updates: Partial<RoadmapItemView>) => void;
   onDelete: (id: string) => void;
 }
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("tr-TR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+function formatRelativeTime(iso: string): string {
+  const date = new Date(iso);
+  const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diffSec < 60) return "az önce";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} dakika önce`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} saat önce`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `${diffDay} gün önce`;
+  return date.toLocaleDateString("tr-TR", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function RoadmapCardModal({ item, onClose, onUpdate, onDelete }: RoadmapCardModalProps) {
+export function RoadmapCardModal({ item, columnName, onClose, onUpdate, onDelete }: RoadmapCardModalProps) {
   const isOpen = item !== null;
   const { shouldRender, isClosing } = useModalAnimation(isOpen);
 
@@ -154,23 +164,36 @@ export function RoadmapCardModal({ item, onClose, onUpdate, onDelete }: RoadmapC
     onClose();
   }
 
+  const orderedComments = [...comments].reverse(); // newest first, Trello-style
+
   return (
     <div className={`modal-overlay${isClosing ? " closing" : ""}`} onClick={onClose}>
       <div
-        className={`modal-panel modal-panel-lg${isClosing ? " closing" : ""}`}
+        className={`modal-panel modal-panel-lg${isClosing ? " closing" : ""} max-h-[85vh] overflow-y-auto`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleTitleBlur}
-            className="flex-1 bg-transparent text-lg font-bold text-white placeholder-zinc-500 focus:outline-none border-b border-transparent focus:border-violet-500/50 transition-colors"
-          />
+        {/* Header: small card icon + title + close */}
+        <div className="flex items-start gap-3">
+          <div className="mt-1 w-6 h-6 rounded-md bg-violet-500/15 border border-violet-500/25 flex items-center justify-center shrink-0">
+            <svg className="w-3.5 h-3.5 text-violet-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={handleTitleBlur}
+              className="w-full bg-transparent text-lg font-bold text-white placeholder-zinc-500 focus:outline-none rounded px-1 -mx-1 focus:bg-white/5 transition-colors"
+            />
+            <p className="text-xs text-zinc-500 mt-0.5 px-1">
+              <span className="font-medium text-zinc-400">{columnName}</span> listesinde
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 text-zinc-500 hover:text-white transition-colors"
+            className="shrink-0 text-zinc-500 hover:text-white transition-colors mt-0.5"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -178,90 +201,141 @@ export function RoadmapCardModal({ item, onClose, onUpdate, onDelete }: RoadmapC
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        {/* Property pills: label + due date */}
+        <div className="flex flex-wrap gap-4 mt-4 mb-6 ml-9">
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Etiket</label>
+            <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block mb-1.5">Etiket</span>
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               onBlur={handleLabelBlur}
-              placeholder="Örn: Bug, İyileştirme..."
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition-colors"
+              placeholder="+ Etiket ekle"
+              className={`text-xs font-medium px-2.5 py-1.5 rounded-full border focus:outline-none transition-colors placeholder-zinc-500 ${
+                label
+                  ? "bg-violet-500/15 text-violet-300 border-violet-500/30 focus:border-violet-400"
+                  : "bg-white/5 text-zinc-400 border-white/10 focus:border-violet-500/50 hover:bg-white/[0.07]"
+              }`}
+              style={{ width: `${Math.max(label.length || 12, 10) + 3}ch` }}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Tarih</label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => handleDueDateChange(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors [color-scheme:dark]"
-            />
+            <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block mb-1.5">Tarih</span>
+            <div
+              className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors ${
+                dueDate
+                  ? "bg-white/10 text-zinc-200 border-white/15"
+                  : "bg-white/5 text-zinc-400 border-white/10"
+              }`}
+            >
+              <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => handleDueDateChange(e.target.value)}
+                className="bg-transparent focus:outline-none [color-scheme:dark]"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="mb-5">
-          <label className="block text-xs font-medium text-zinc-400 mb-1.5">Açıklama</label>
+        {/* Description */}
+        <div className="ml-9 mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+            </svg>
+            <h4 className="text-sm font-semibold text-zinc-300">Açıklama</h4>
+          </div>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             onBlur={handleDescriptionBlur}
-            placeholder="Kart hakkında açıklama ekle..."
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition-colors resize-none h-20"
+            placeholder="Daha detaylı bir açıklama ekle..."
+            className="w-full bg-white/5 hover:bg-white/[0.07] focus:bg-white/[0.07] border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500/50 transition-colors resize-none h-24"
           />
         </div>
 
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-zinc-400 mb-2">
-            Yorumlar {comments.length > 0 && <span className="text-zinc-600">({comments.length})</span>}
-          </label>
-          <div className="max-h-48 overflow-y-auto space-y-2 mb-3">
+        {/* Activity / comments */}
+        <div className="ml-9">
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <h4 className="text-sm font-semibold text-zinc-300">
+              Yorumlar {comments.length > 0 && <span className="text-zinc-600 font-normal">({comments.length})</span>}
+            </h4>
+          </div>
+
+          <div className="flex gap-2.5 mb-4">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-[11px] font-bold text-white shrink-0 mt-0.5">
+              S
+            </div>
+            <div className="flex-1 min-w-0">
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAddComment();
+                  }
+                }}
+                placeholder="Bir yorum yaz..."
+                className="w-full bg-white/5 hover:bg-white/[0.07] focus:bg-white/[0.07] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500/50 transition-colors resize-none h-16"
+              />
+              {newComment.trim() && (
+                <button
+                  type="button"
+                  onClick={handleAddComment}
+                  disabled={isPostingComment}
+                  className="mt-2 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-400 hover:to-fuchsia-400 rounded-lg transition-all disabled:opacity-50"
+                >
+                  {isPostingComment ? "Kaydediliyor..." : "Kaydet"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3">
             {commentsLoading ? (
-              <p className="text-xs text-zinc-500">Yükleniyor...</p>
-            ) : comments.length === 0 ? (
-              <p className="text-xs text-zinc-600 italic">Henüz yorum yok.</p>
+              <p className="text-xs text-zinc-500 ml-9">Yükleniyor...</p>
+            ) : orderedComments.length === 0 ? (
+              <p className="text-xs text-zinc-600 italic ml-9">Henüz yorum yok.</p>
             ) : (
-              comments.map((comment) => (
-                <div key={comment.id} className="group bg-white/5 border border-white/5 rounded-lg px-3 py-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm text-zinc-200 whitespace-pre-wrap break-words">{comment.text}</p>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteComment(comment.id)}
-                      className="shrink-0 text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all text-xs"
-                    >
-                      ✕
-                    </button>
+              orderedComments.map((comment) => (
+                <div key={comment.id} className="flex gap-2.5 group">
+                  <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-bold text-zinc-300 shrink-0">
+                    S
                   </div>
-                  <p className="text-[11px] text-zinc-500 mt-1">{formatDateTime(comment.createdAt)}</p>
+                  <div className="flex-1 min-w-0 bg-white/5 rounded-xl rounded-tl-sm px-3 py-2">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <span className="text-xs font-medium text-zinc-300">Sen</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-zinc-500">{formatRelativeTime(comment.createdAt)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteComment(comment.id)}
+                          className="text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all text-[11px]"
+                        >
+                          Sil
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-zinc-200 whitespace-pre-wrap break-words">{comment.text}</p>
+                  </div>
                 </div>
               ))
             )}
           </div>
-          <div className="flex gap-2">
-            <input
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
-              placeholder="Yorum ekle..."
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition-colors"
-            />
-            <button
-              type="button"
-              onClick={handleAddComment}
-              disabled={!newComment.trim() || isPostingComment}
-              className="shrink-0 px-3 py-1.5 text-sm font-medium text-white bg-white/10 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Ekle
-            </button>
-          </div>
         </div>
 
-        <div className="flex items-center justify-end pt-3 border-t border-white/5">
+        <div className="ml-9 flex items-center justify-end pt-5 mt-5 border-t border-white/5">
           <button
             type="button"
             onClick={handleDelete}
-            className="text-sm text-red-400/70 hover:text-red-400 transition-colors"
+            className="text-xs text-red-400/70 hover:text-red-400 transition-colors"
           >
             Kartı Sil
           </button>

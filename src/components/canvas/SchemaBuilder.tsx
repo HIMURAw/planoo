@@ -250,14 +250,20 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
     [nodes],
   );
 
-  const handleEdgesDelete = useCallback((deleted: Edge[]) => {
-    setSelectedEdgeIds((prev) => {
-      const next = new Set(prev);
-      for (const edge of deleted) next.delete(edge.id);
-      return next;
-    });
-    setNodes((prev) => {
-      let next = prev;
+  const handleEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      setSelectedEdgeIds((prev) => {
+        const next = new Set(prev);
+        for (const edge of deleted) next.delete(edge.id);
+        return next;
+      });
+
+      // Computed from the `nodes` closure rather than inside a setNodes
+      // functional updater, so the fetch() calls below don't live inside
+      // it — React 18/19 Strict Mode double-invokes updater functions in
+      // dev specifically to catch impure ones like that, which was
+      // silently firing every one of these PATCHes twice.
+      let next = nodes;
       for (const edge of deleted) {
         const sourceColumnId = edge.sourceHandle?.replace("source-", "");
         if (!sourceColumnId) continue;
@@ -278,9 +284,10 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
           },
         }));
       }
-      return next;
-    });
-  }, []);
+      setNodes(next);
+    },
+    [nodes],
+  );
 
   const handleNodesDelete = useCallback(
     (deleted: Node[]) => {

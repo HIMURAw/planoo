@@ -22,17 +22,27 @@ export async function PATCH(
   const body = (await request.json()) as {
     title?: string;
     description?: string;
-    status?: string;
+    columnId?: string;
     order?: number;
     label?: string | null;
     dueDate?: string | null;
   };
+  // A columnId move must stay within the same project — verify ownership
+  // of the target column too, not just the item being moved.
+  if (body.columnId !== undefined) {
+    const targetColumn = await prisma.roadmapColumn.findFirst({
+      where: { id: body.columnId, projectId: existing.projectId },
+    });
+    if (!targetColumn) {
+      return NextResponse.json({ error: "invalid_column" }, { status: 400 });
+    }
+  }
   const item = await prisma.roadmapItem.update({
     where: { id },
     data: {
       ...(body.title !== undefined && { title: body.title.trim() }),
       ...(body.description !== undefined && { description: body.description.trim() || null }),
-      ...(body.status !== undefined && { status: body.status as "todo" | "in_progress" | "done" }),
+      ...(body.columnId !== undefined && { columnId: body.columnId }),
       ...(body.order !== undefined && { order: body.order }),
       ...(body.label !== undefined && { label: body.label?.trim() || null }),
       ...(body.dueDate !== undefined && { dueDate: body.dueDate ? new Date(body.dueDate) : null }),
