@@ -83,12 +83,46 @@ See design doc: `~/.gstack/projects/HIMURAw-planoo/zamto-main-design-20260718-14
 **Priority:** P3
 **Depends on / blocked by:** Üretim trafiği / ilk gerçek kullanıcılar.
 
-## P3 — Roadmap + planlama birleşimi (uzun vadeli vizyon)
-**What:** Roadmap/yapılacaklar listesi, kullanılacak stack kararları gibi proje planlama dokümanlarını da (şu an ayrı `.md` dosyalarında tutulan türden) aynı canvas'a/siteye entegre etmek — sadece UI-DB traceability değil, projenin tüm planlama katmanı.
-**Why:** Kurucunun kendi vakası (bu proje) bunu doğruladı: Figma + ayrı .md dosyası + DB şeması arasında hiçbir bağlantı olmaması zaman kaybettirdi ve planlamayı zorlaştırdı. Ürünün nihai vizyonu ("bir projeye başlandığında tüm planlamanın tek bir sitede yapılması") bu.
-**Pros:** Faz 1 traceability MVP'sinden çok daha geniş bir problemi çözer; "tek site" vaadini tam karşılar.
-**Cons:** Kapsamı önemli ölçüde büyütür — Faz 0/Faz 1'in dar MVP disiplinini bozar. Roadmap/doküman yönetimi kendi başına ayrı bir ürün kategorisi (Notion/Linear benzeri) — rekabet ve karmaşıklık farklı.
-**Context:** CEO review (SCOPE REDUCTION) kararı: Faz 0/Faz 1 sınırı (sadece UI-DB traceability) şimdilik sabit kalsın, bu madde ayrı bir vizyon olarak kayıt altına alınsın. Faz 1 talep + spike doğrulanıp gerçek kullanıcılar "UI-DB eşleşmesi yeterli değil, roadmap'i de istiyoruz" dediğinde önceliklendirilmeli — varsayımla değil, kullanıcı talebiyle.
-**Effort:** XL (human: aylar) → CC: haftalar — ayrı bir ürün kategorisi kadar büyük.
+## TAMAMLANDI — Roadmap + planlama birleşimi
+**What:** Roadmap/yapılacaklar listesini aynı canvas'a/siteye entegre etmek — sadece UI-DB traceability değil, projenin planlama katmanı da.
+**Durum:** Kurucunun kendi kararıyla inşa edildi (Trello-tarzı, sürüklenebilir kolonlu yapılacaklar panosu — yorum/etiket/tarih desteğiyle) — bu maddenin orijinal "dış kullanıcı talebi gelince" koşulu beklenmeden. Aşağıdaki yeni maddeler için de aynı disiplin (talep bekleme) geçerli olmaya devam ediyor; bu madde özelinde kurucu bilinçli olarak öne aldı.
+
+## P3 — Kod tabanından mimari çıkarma (reverse engineering)
+**What:** Bir repo'yu tarayıp mimariyi (servisler, modüller, ilişkiler) otomatik olarak görselleştirme — rakip analizi dokümanının önerdiği bir fikir.
+**Why:** `scripts/agent.ts` şu an sadece DB şemasını (`information_schema`) okuyor, kod-seviyesi bir mimari analizi yapmıyor. Rakip analizinde "sıfır kurulumla kod tabanından mimari üretme" beklentisi olarak tanımlandı.
+**Pros:** Bilişsel yükü azaltma vaadini güçlendirir; hiçbir rakipte tam karşılığı yok.
+**Cons:** Büyük, spekülatif bir yeni yetenek — dil/framework'e göre değişen bir kod-analiz motoru gerektirir, mevcut dar MVP'nin çok ötesinde.
+**Context:** `analiz.md` (rakip analizi) referans doküman. Bu tur önceliklendirilmedi — kullanıcı sadece maliyet/performans simülatörünü seçti (bkz. commit geçmişi, `CostPanel.tsx`).
+**Effort:** L-XL (human: haftalar) → CC: ~1-2 hafta.
 **Priority:** P3
-**Depends on / blocked by:** Faz 1 MVP'nin canlıya alınması + kullanıcılardan gelen açık talep (varsayımla büyütülmemeli — bu tam olarak Section 0'da uyardığımız risk).
+**Depends on / blocked by:** Kullanıcı talebi / bu yönde açık bir sinyal.
+
+## P3 — C4 modeli / genel sistem mimarisi katmanı
+**What:** DB şemasının ötesinde, servisler/container'lar arası genel sistem mimarisi diyagramlama (C4 modeli: Context/Container/Component).
+**Why:** Rakip analizinde IcePanel'in güçlü yönü olarak tanımlandı — planoo şu an sadece DB şemasına odaklı.
+**Pros:** planoo'yu "DB-traceability aracı"ndan "genel mimari aracı"na genişletir.
+**Cons:** Kapsamı önemli ölçüde büyütür (Roadmap+planlama birleşimi maddesindeki "dar MVP disiplinini bozar" uyarısıyla aynı sınıfta) — IcePanel'in doğrudan alanına girer, ayrı bir ürün kategorisi.
+**Context:** `analiz.md` referans doküman. Bu tur önceliklendirilmedi.
+**Effort:** XL (human: aylar) → CC: haftalar.
+**Priority:** P3
+**Depends on / blocked by:** Kullanıcı talebi / bu yönde açık bir sinyal.
+
+## P3 — Gizlilik-odaklı / tek-seferlik satın alma fiyatlandırma modeli
+**What:** Mevcut Lemon Squeezy abonelik modelinin yanına veya yerine self-host / tek seferlik satın alma seçeneği.
+**Why:** Rakip analizinde dbdiagram.io'nun "kamusal şema tuzağı" ve IcePanel'in yüksek abonelik fiyatına karşı bir farklılaştırıcı olarak önerildi.
+**Pros:** Veri gizliliği kaygısı olan kullanıcılar için net bir alternatif.
+**Cons:** Bu bir ürün özelliği değil, iş modeli kararı — mevcut billing altyapısını (Lemon Squeezy webhook, `User.plan`) doğrudan etkiler, ayrı bir CEO-review tarzı değerlendirme gerektirir.
+**Context:** `analiz.md` referans doküman. Bu tur önceliklendirilmedi.
+**Effort:** M-L (human: haftalar) → CC: belirsiz — büyük ölçüde iş kararına bağlı.
+**Priority:** P3
+**Depends on / blocked by:** Ayrı bir iş modeli değerlendirmesi/kararı.
+
+## P2 — Landing page rakip-kıyaslama mesajlaşması
+**What:** planoo'nun UI-DB traceability özelliğinin (Link state machine: suggested/confirmed/stale/broken) hiçbir rakipte (Eraser.io, IcePanel, dbdiagram.io, Miro/Lucidchart, ChartDB) bulunmadığını landing page'de açıkça kurmak.
+**Why:** Rakip analizi bu boşluğu ("Arayüz (UI) ile Veri Katmanı Arasındaki Kopukluk") tam olarak planoo'nun zaten çözdüğü şey olarak tanımlıyor, ama `src/components/landing/Features.tsx`/`WhyUs.tsx` bunu rakiplerle doğrudan kıyaslayarak anlatmıyor.
+**Pros:** Düşük efor, potansiyel yüksek etkili positioning güncellemesi — yeni kod/altyapı gerektirmez.
+**Cons:** Yok — sadece pazarlama kopyası.
+**Context:** `analiz.md` referans doküman.
+**Effort:** S (human: birkaç saat) → CC: ~1 saat.
+**Priority:** P2
+**Depends on / blocked by:** Yok.

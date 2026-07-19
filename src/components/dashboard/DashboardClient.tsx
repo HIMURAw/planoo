@@ -6,6 +6,7 @@ import { OverviewPanel } from "./OverviewPanel";
 import { SchemaPanel } from "./SchemaPanel";
 import { FigmaPanel } from "./FigmaPanel";
 import { RoadmapPanel } from "./RoadmapPanel";
+import { CostPanel } from "./CostPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { CreateProjectModal, type CreateProjectFormData } from "./CreateProjectModal";
 import type { DesignedTable } from "@/components/canvas/SchemaBuilder";
@@ -205,6 +206,8 @@ export function DashboardClient({
         );
       case "roadmap":
         return <RoadmapPanel project={activeProject} />;
+      case "cost":
+        return <CostPanel project={activeProject} />;
       case "settings":
         return (
           <SettingsPanel
