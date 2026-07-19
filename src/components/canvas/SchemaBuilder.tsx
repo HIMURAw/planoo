@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
   Panel,
   applyNodeChanges,
   MarkerType,
+  useReactFlow,
   type Edge,
   type Node,
   type NodeChange,
@@ -18,6 +20,12 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { SchemaTableNode, SchemaCanvasProvider, type SchemaTableNodeType } from "./SchemaTableNode";
+import {
+  canAddTableToPath,
+  generateJoinQuery,
+  type QueryBuilderColumnRef,
+  type QueryBuilderTable,
+} from "@/lib/query-builder";
 
 export interface DesignedColumn {
   id: string;
@@ -105,11 +113,30 @@ function buildInitialNodes(tables: DesignedTable[]): SchemaTableNodeType[] {
 // tables/columns designed here feed /api/recheck the exact same DbColumn[]
 // shape scripts/agent.ts used to produce, so nothing downstream (matcher,
 // canvas) needed to change.
-export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: SchemaBuilderProps) {
+// useReactFlow() (needed to spawn new tables at the center of whatever the
+// user is currently looking at, see handleAddTable) only works from inside
+// the context ReactFlow itself establishes — hence the Provider/Inner split,
+// the standard xyflow pattern for using the hook alongside <ReactFlow> in
+// the same tree.
+export function SchemaBuilder(props: SchemaBuilderProps) {
+  return (
+    <ReactFlowProvider>
+      <SchemaBuilderInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function SchemaBuilderInner({ projectId, initialTables, onSchemaChanged }: SchemaBuilderProps) {
   const [newTableName, setNewTableName] = useState("");
   const [creatingTable, setCreatingTable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nodes, setNodes] = useState<SchemaTableNodeType[]>(() => buildInitialNodes(initialTables));
+  const [isQueryMode, setIsQueryMode] = useState(false);
+  const [queryPath, setQueryPath] = useState<QueryBuilderColumnRef[]>([]);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [queryCopied, setQueryCopied] = useState(false);
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const { screenToFlowPosition } = useReactFlow();
   // Edges are recomputed fresh from `nodes` every render (see the `edges`
   // useMemo below) rather than kept as their own state, since they're purely
   // derived from FK column data. Selection is the one piece of UI-only state
@@ -217,9 +244,89 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
     [nodes, onSchemaChanged],
   );
 
+  // Visual query builder: converts a `DesignedTable` (this file's shape,
+  // free-text dataType etc.) into the minimal shape lib/query-builder.ts's
+  // pure FK-graph logic actually needs.
+  const toQueryBuilderTable = useCallback(
+    (table: DesignedTable): QueryBuilderTable => ({
+      id: table.id,
+      name: table.name,
+      columns: table.columns.map((c) => ({
+        id: c.id,
+        name: c.name,
+        isForeignKey: c.isForeignKey,
+        referencesTable: c.referencesTable,
+        referencesColumn: c.referencesColumn,
+      })),
+    }),
+    [],
+  );
+
+  const handleColumnClick = useCallback(
+    (tableId: string, columnId: string) => {
+      if (queryPath.some((c) => c.columnId === columnId)) {
+        setQueryPath(queryPath.filter((c) => c.columnId !== columnId));
+        return;
+      }
+
+      const node = nodes.find((n) => n.id === tableId);
+      const column = node?.data.table.columns.find((c) => c.id === columnId);
+      if (!node || !column) return;
+
+      const tableIdsInPath = new Set(queryPath.map((c) => c.tableId));
+      const tablesInPath = nodes.filter((n) => tableIdsInPath.has(n.id)).map((n) => toQueryBuilderTable(n.data.table));
+
+      if (!canAddTableToPath(toQueryBuilderTable(node.data.table), tablesInPath)) {
+        setQueryError(`"${node.data.table.name}" tablosu, seçili tablolarla bir foreign key ilişkisiyle bağlı değil.`);
+        return;
+      }
+      setQueryError(null);
+      setQueryPath([
+        ...queryPath,
+        { tableId, tableName: node.data.table.name, columnId, columnName: column.name },
+      ]);
+    },
+    [nodes, queryPath, toQueryBuilderTable],
+  );
+
+  const queryColumnOrder = useMemo(() => {
+    const map = new Map<string, number>();
+    queryPath.forEach((c, i) => map.set(c.columnId, i + 1));
+    return map;
+  }, [queryPath]);
+
+  const generatedQuery = useMemo(() => {
+    if (queryPath.length === 0) return null;
+    return generateJoinQuery(queryPath, nodes.map((n) => toQueryBuilderTable(n.data.table)));
+  }, [queryPath, nodes, toQueryBuilderTable]);
+
+  function handleToggleQueryMode() {
+    setIsQueryMode((v) => !v);
+    setQueryError(null);
+  }
+
+  function handleClearQueryPath() {
+    setQueryPath([]);
+    setQueryError(null);
+  }
+
+  async function handleCopyQuery() {
+    if (!generatedQuery) return;
+    await navigator.clipboard.writeText(generatedQuery.sql);
+    setQueryCopied(true);
+    setTimeout(() => setQueryCopied(false), 1500);
+  }
+
   const canvasHandlers = useMemo(
-    () => ({ onAddColumn: handleAddColumn, onDeleteColumn: handleDeleteColumn, onDeleteTable: handleDeleteTable }),
-    [handleAddColumn, handleDeleteColumn, handleDeleteTable],
+    () => ({
+      onAddColumn: handleAddColumn,
+      onDeleteColumn: handleDeleteColumn,
+      onDeleteTable: handleDeleteTable,
+      isQueryMode,
+      onColumnClick: handleColumnClick,
+      queryColumnOrder,
+    }),
+    [handleAddColumn, handleDeleteColumn, handleDeleteTable, isQueryMode, handleColumnClick, queryColumnOrder],
   );
 
   const onConnect: OnConnect = useCallback(
@@ -320,7 +427,34 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
         setError(data.error ?? "Tablo oluşturulamadı");
         return;
       }
-      const next = [...nodes, tableToNode(data.table!)];
+
+      // The server assigns a grid fallback position (see /api/schema/tables)
+      // that has no idea where the user is currently looking on a large
+      // canvas — override it with the center of the current viewport so a
+      // freshly created table doesn't spawn somewhere the user has to go
+      // hunting for. estimateNodeHeight/NODE_WIDTH center the node itself on
+      // that point, not just its top-left corner.
+      const wrapper = canvasWrapperRef.current;
+      const centerScreen = wrapper
+        ? (() => {
+            const rect = wrapper.getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          })()
+        : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      const centerFlow = screenToFlowPosition(centerScreen);
+      const table: DesignedTable = {
+        ...data.table,
+        posX: centerFlow.x - NODE_WIDTH / 2,
+        posY: centerFlow.y - estimateNodeHeight(data.table) / 2,
+      };
+
+      fetch(`/api/schema/tables/${table.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ posX: table.posX, posY: table.posY }),
+      });
+
+      const next = [...nodes, tableToNode(table)];
       setNodes(next);
       onSchemaChanged(next.some((n) => n.data.table.columns.length > 0));
       setNewTableName("");
@@ -367,7 +501,7 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
         </p>
       )}
 
-      <div className="flex-1">
+      <div className="flex-1" ref={canvasWrapperRef}>
         <SchemaCanvasProvider value={canvasHandlers}>
           <ReactFlow
             nodes={nodes}
@@ -412,9 +546,76 @@ export function SchemaBuilder({ projectId, initialTables, onSchemaChanged }: Sch
 
             <Panel position="bottom-left">
               <p className="glass-panel rounded-lg px-3 py-1.5 text-[11px] text-zinc-400">
-                Bağlantı çizmek için bir kolonun kenarındaki noktayı sürükleyin · silmek için bağlantıyı seçip{" "}
-                <kbd className="rounded bg-white/10 px-1 py-0.5 font-mono">Delete</kbd>
+                {isQueryMode
+                  ? "Sorguya eklemek için kolonlara sırayla tıklayın · seçimi kaldırmak için tekrar tıklayın"
+                  : (
+                    <>
+                      Bağlantı çizmek için bir kolonun kenarındaki noktayı sürükleyin · silmek için bağlantıyı seçip{" "}
+                      <kbd className="rounded bg-white/10 px-1 py-0.5 font-mono">Delete</kbd>
+                    </>
+                  )}
               </p>
+            </Panel>
+
+            <Panel position="top-right">
+              <div className="flex flex-col items-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleQueryMode}
+                  className={`glass-panel flex items-center gap-2 rounded-xl px-3 py-2 font-mono text-xs font-bold uppercase tracking-wide transition-colors ${
+                    isQueryMode
+                      ? "border border-violet-400/60 bg-violet-500/20 text-violet-200"
+                      : "border border-white/10 text-zinc-300 hover:text-white"
+                  }`}
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Sorgu Oluşturucu
+                </button>
+
+                {isQueryMode && (
+                  <div className="glass-panel w-96 rounded-xl border border-violet-400/20 p-3">
+                    {queryPath.length === 0 ? (
+                      <p className="text-[11px] text-zinc-400">
+                        Bir SELECT sorgusu oluşturmak için tablolardaki kolonlara sırayla tıklayın — ör. Users → Orders → OrderItems.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="font-mono text-[10px] uppercase tracking-wide text-violet-300">
+                            {queryPath.length} kolon seçildi
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleClearQueryPath}
+                            className="font-mono text-[10px] text-zinc-400 hover:text-red-400"
+                          >
+                            [Temizle]
+                          </button>
+                        </div>
+                        {generatedQuery ? (
+                          <>
+                            <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-[#0a0f1a] p-2.5 font-mono text-[11px] leading-relaxed text-emerald-300">
+                              {generatedQuery.sql}
+                            </pre>
+                            <button
+                              type="button"
+                              onClick={handleCopyQuery}
+                              className="mt-2 w-full rounded-lg bg-violet-500 px-3 py-1.5 font-mono text-[11px] font-bold text-white transition-colors hover:bg-violet-400"
+                            >
+                              {queryCopied ? "Kopyalandı ✓" : "Sorguyu Kopyala"}
+                            </button>
+                          </>
+                        ) : (
+                          <p className="text-[11px] text-amber-400">Sorgu üretilemedi — seçili kolonların tabloları arasında bir foreign key yolu bulunamadı.</p>
+                        )}
+                      </>
+                    )}
+                    {queryError && <p className="mt-2 text-[11px] text-red-400">{queryError}</p>}
+                  </div>
+                )}
+              </div>
             </Panel>
           </ReactFlow>
         </SchemaCanvasProvider>

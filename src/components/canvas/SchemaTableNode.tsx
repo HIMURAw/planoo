@@ -14,6 +14,14 @@ export interface SchemaCanvasHandlers {
   onAddColumn: (tableId: string, column: Omit<DesignedColumn, "id">) => void;
   onDeleteColumn: (tableId: string, columnId: string) => void;
   onDeleteTable: (tableId: string) => void;
+  // Visual query builder: when active, clicking a column row (instead of
+  // dragging its Handle to draw an FK) adds it to the query path — see
+  // lib/query-builder.ts for how that path becomes a JOIN query.
+  isQueryMode: boolean;
+  onColumnClick: (tableId: string, columnId: string) => void;
+  // 1-based position in the current query path, keyed by columnId — absent
+  // for columns not yet selected.
+  queryColumnOrder: Map<string, number>;
 }
 
 // Node data only ever carries the table (see SchemaTableNodeData) — the
@@ -39,7 +47,8 @@ function useSchemaCanvasHandlers(): SchemaCanvasHandlers {
 // so FK relationships can be drawn column-to-column, not just table-to-table.
 export function SchemaTableNode({ data }: NodeProps<SchemaTableNodeType>) {
   const { table } = data;
-  const { onAddColumn, onDeleteColumn, onDeleteTable } = useSchemaCanvasHandlers();
+  const { onAddColumn, onDeleteColumn, onDeleteTable, isQueryMode, onColumnClick, queryColumnOrder } =
+    useSchemaCanvasHandlers();
   const [showAddColumn, setShowAddColumn] = useState(false);
 
   return (
@@ -59,46 +68,64 @@ export function SchemaTableNode({ data }: NodeProps<SchemaTableNodeType>) {
         {table.columns.length === 0 && (
           <p className="px-3 py-2 text-[11px] text-amber-400/80">* Kolon tanımlanmadı.</p>
         )}
-        {table.columns.map((col) => (
-          <div
-            key={col.id}
-            className="relative flex items-center justify-between border-b border-blue-500/5 px-3 py-1.5 text-[11px] text-blue-200 last:border-b-0 hover:bg-blue-500/5"
-          >
-            <Handle
-              type="target"
-              position={Position.Left}
-              id={`target-${col.id}`}
-              className="!h-2.5 !w-2.5 !border-2 !border-blue-400 !bg-[#0d2240]"
-            />
-            <span className="flex min-w-0 items-center gap-1.5">
-              {col.isPrimaryKey && (
-                <span className="shrink-0 rounded border border-amber-500/40 bg-amber-500/20 px-1 text-[9px] font-bold text-amber-400">
-                  PK
-                </span>
-              )}
-              {col.isForeignKey && (
-                <span className="shrink-0 rounded border border-blue-500/40 bg-blue-500/20 px-1 text-[9px] font-bold text-blue-400">
-                  FK
-                </span>
-              )}
-              <span className="truncate font-bold text-white">{col.name}</span>
-              <span className="truncate font-medium text-blue-400/60">{col.dataType}</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => onDeleteColumn(table.id, col.id)}
-              className="nodrag ml-2 shrink-0 text-[10px] text-blue-500/30 transition-colors hover:text-red-400"
+        {table.columns.map((col) => {
+          const queryOrder = queryColumnOrder.get(col.id);
+          const isSelectedForQuery = queryOrder !== undefined;
+          return (
+            <div
+              key={col.id}
+              onClick={isQueryMode ? () => onColumnClick(table.id, col.id) : undefined}
+              className={`relative flex items-center justify-between border-b px-3 py-1.5 text-[11px] text-blue-200 last:border-b-0 ${
+                isQueryMode ? "nodrag cursor-pointer" : ""
+              } ${
+                isSelectedForQuery
+                  ? "border-violet-500/20 bg-violet-500/15 hover:bg-violet-500/20"
+                  : "border-blue-500/5 hover:bg-blue-500/5"
+              }`}
             >
-              ✕
-            </button>
-            <Handle
-              type="source"
-              position={Position.Right}
-              id={`source-${col.id}`}
-              className="!h-2.5 !w-2.5 !border-2 !border-violet-400 !bg-[#0d2240]"
-            />
-          </div>
-        ))}
+              <Handle
+                type="target"
+                position={Position.Left}
+                id={`target-${col.id}`}
+                className="!h-2.5 !w-2.5 !border-2 !border-blue-400 !bg-[#0d2240]"
+              />
+              <span className="flex min-w-0 items-center gap-1.5">
+                {isSelectedForQuery && (
+                  <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-violet-500 text-[9px] font-bold text-white">
+                    {queryOrder}
+                  </span>
+                )}
+                {col.isPrimaryKey && (
+                  <span className="shrink-0 rounded border border-amber-500/40 bg-amber-500/20 px-1 text-[9px] font-bold text-amber-400">
+                    PK
+                  </span>
+                )}
+                {col.isForeignKey && (
+                  <span className="shrink-0 rounded border border-blue-500/40 bg-blue-500/20 px-1 text-[9px] font-bold text-blue-400">
+                    FK
+                  </span>
+                )}
+                <span className="truncate font-bold text-white">{col.name}</span>
+                <span className="truncate font-medium text-blue-400/60">{col.dataType}</span>
+              </span>
+              {!isQueryMode && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteColumn(table.id, col.id)}
+                  className="nodrag ml-2 shrink-0 text-[10px] text-blue-500/30 transition-colors hover:text-red-400"
+                >
+                  ✕
+                </button>
+              )}
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={`source-${col.id}`}
+                className="!h-2.5 !w-2.5 !border-2 !border-violet-400 !bg-[#0d2240]"
+              />
+            </div>
+          );
+        })}
       </div>
 
       <div className="border-t border-blue-400/10 px-3 py-2">
