@@ -66,6 +66,7 @@ export const PLANS: PlanDefinition[] = [
     ],
     cta: "Team'e geç",
     variantEnvVar: "LEMONSQUEEZY_TEAM_VARIANT_ID",
+    projectLimit: null,
   },
 ];
 

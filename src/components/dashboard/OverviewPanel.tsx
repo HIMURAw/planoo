@@ -17,7 +17,7 @@ export function OverviewPanel({ project, onPanelChange, onOpenCreateModal }: Ove
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
           </svg>
         </div>
-        <h2 className="text-3xl font-bold text-white mb-3 tracking-tight">Planoo'ya Hoş Geldin!</h2>
+        <h2 className="text-3xl font-bold text-white mb-3 tracking-tight">Planoo&apos;ya Hoş Geldin!</h2>
         <p className="text-zinc-400 max-w-md mx-auto mb-8 text-sm leading-relaxed">
           Başlamak için ilk projeni oluştur, veya sol üstteki proje seçiciden mevcut bir projeyi seç.
         </p>
@@ -147,7 +147,7 @@ export function OverviewPanel({ project, onPanelChange, onOpenCreateModal }: Ove
                 onClick={() => onPanelChange('figma')}
                 className="w-full flex items-center justify-between p-3 rounded-xl bg-white/3 border border-white/5 hover:border-fuchsia-500/20 hover:bg-fuchsia-500/5 transition-all text-left text-sm text-zinc-300 hover:text-white"
               >
-                <span>Figma'yı Bağla</span>
+                <span>Figma&apos;yı Bağla</span>
                 <span className="text-fuchsia-400 text-xs">Aç →</span>
               </button>
               <button 

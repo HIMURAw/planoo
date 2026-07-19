@@ -36,7 +36,7 @@ export function SettingsPanel({ project, plan }: SettingsPanelProps) {
             <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5">
               <div>
                 <h3 className="text-white font-medium mb-1">Figma Hesabı</h3>
-                <p className="text-sm text-zinc-400">Planoo'nun Figma tasarımlarınıza erişmesi için yetkilendirin.</p>
+                <p className="text-sm text-zinc-400">Planoo&apos;nun Figma tasarımlarınıza erişmesi için yetkilendirin.</p>
               </div>
               <a 
                 href="/api/figma/connect" 

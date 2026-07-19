@@ -45,7 +45,7 @@ export function RoadmapPanel({ project }: RoadmapPanelProps) {
     
     // Optimistic UI
     const newItem: RoadmapItemView = {
-      id: Math.random().toString(),
+      id: crypto.randomUUID(),
       title: newTitle,
       description: null,
       status,
