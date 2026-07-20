@@ -102,6 +102,40 @@ function buildNodesFromElements(elements: DesignElement[]): DesignElementNodeTyp
   return sorted.map((el) => elementToNode(el, el.parentId ? byId.get(el.parentId) : undefined));
 }
 
+// The absolute (top-level-flow-space) position of an element, found by
+// summing its own posX/posY with every ancestor's posX/posY up the parent
+// chain — each element's posX/posY is stored relative to its immediate
+// parent's origin (or, for a top-level element, is already absolute).
+// Used when reparenting via the layers panel drag-and-drop below, so an
+// element visually stays in place when it moves to a new parent.
+function getAbsolutePosition(id: string, elements: DesignElement[]): { x: number; y: number } {
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  let x = 0;
+  let y = 0;
+  let current = byId.get(id);
+  while (current) {
+    x += current.posX;
+    y += current.posY;
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  return { x, y };
+}
+
+// True if `targetId` is `candidateId` itself, or a descendant of it —
+// i.e. setting `targetId` as `candidateId`'s new parent would create a
+// cycle. Used to reject invalid drag-and-drop reparenting in the layers
+// panel before it ever reaches the network.
+function isSelfOrDescendant(candidateId: string, targetId: string, elements: DesignElement[]): boolean {
+  if (candidateId === targetId) return true;
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  let current = byId.get(targetId);
+  while (current?.parentId) {
+    if (current.parentId === candidateId) return true;
+    current = byId.get(current.parentId);
+  }
+  return false;
+}
+
 function collectDescendantIds(id: string, allNodes: DesignElementNodeType[]): Set<string> {
   const result = new Set<string>([id]);
   let changed = true;
@@ -685,6 +719,94 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
     onDesignChanged();
   }, [nodes, onDesignChanged, handleDeleteElement]);
 
+  // --- Layers-panel drag-and-drop: reorder within a level, nest inside a
+  // Frame, or un-nest back out — mirrors Figma's own layers-panel model.
+  // `position` "before"/"after" reorders as a sibling of `targetId` (using
+  // ITS parent, whatever level that is — this is what makes un-nesting work,
+  // by dropping next to a shallower-nested or top-level row); "inside" nests
+  // as a child of `targetId`, which must be a frame.
+  const handleReorderElement = useCallback(
+    (draggedId: string, targetId: string, position: "before" | "after" | "inside") => {
+      if (draggedId === targetId) return;
+      const elements = nodes.map((n) => n.data.element);
+      const byId = new Map(elements.map((e) => [e.id, e]));
+      const dragged = byId.get(draggedId);
+      const target = byId.get(targetId);
+      if (!dragged || !target) return;
+      if (position === "inside" && target.type !== "frame") return;
+
+      const newParentId = position === "inside" ? targetId : (target.parentId ?? null);
+      if (newParentId && isSelfOrDescendant(draggedId, newParentId, elements)) return;
+
+      const oldParentId = dragged.parentId ?? null;
+
+      // Destination sibling order, visual top-to-bottom (== descending
+      // `order`, same convention DesignLayersPanel sorts by).
+      const destSiblings = elements
+        .filter((e) => (e.parentId ?? null) === newParentId && e.id !== draggedId)
+        .sort((a, b) => b.order - a.order);
+
+      let insertIndex: number;
+      if (position === "inside") {
+        insertIndex = 0;
+      } else {
+        const targetIndex = destSiblings.findIndex((e) => e.id === targetId);
+        insertIndex = position === "before" ? targetIndex : targetIndex + 1;
+      }
+      destSiblings.splice(insertIndex, 0, dragged);
+      const orderUpdates = new Map(destSiblings.map((e, i) => [e.id, destSiblings.length - 1 - i]));
+
+      // Coordinate conversion only needed when actually reparenting — a
+      // pure reorder within the same parent leaves posX/posY untouched.
+      let posPatch: { posX: number; posY: number } | null = null;
+      if (newParentId !== oldParentId) {
+        const draggedAbs = getAbsolutePosition(draggedId, elements);
+        const newParentAbs = newParentId ? getAbsolutePosition(newParentId, elements) : { x: 0, y: 0 };
+        posPatch = { posX: draggedAbs.x - newParentAbs.x, posY: draggedAbs.y - newParentAbs.y };
+      }
+
+      const updatedElements = elements.map((e) => {
+        const newOrder = orderUpdates.get(e.id);
+        if (e.id === draggedId) {
+          return { ...e, parentId: newParentId, order: newOrder ?? e.order, ...(posPatch ?? {}) };
+        }
+        return newOrder !== undefined ? { ...e, order: newOrder } : e;
+      });
+
+      let next: DesignElementNodeType[] = buildNodesFromElements(updatedElements).map((n) => ({
+        ...n,
+        selected: n.id === draggedId,
+      }));
+
+      let changedChildren: { id: string; posX: number; posY: number }[] = [];
+      for (const affectedParentId of new Set([oldParentId, newParentId].filter((x): x is string => !!x))) {
+        const parentEl = next.find((n) => n.id === affectedParentId)?.data.element;
+        if (parentEl?.type === "frame" && parentEl.layoutMode !== "none") {
+          const result = computeAutoLayoutNodeUpdates(affectedParentId, next);
+          next = result.nodes;
+          changedChildren = [...changedChildren, ...result.changed];
+        }
+      }
+
+      setNodes(next);
+
+      const draggedPatch: Record<string, unknown> = { order: orderUpdates.get(draggedId) };
+      if (newParentId !== oldParentId) {
+        draggedPatch.parentId = newParentId;
+        if (posPatch) Object.assign(draggedPatch, posPatch);
+      }
+
+      Promise.all([
+        patchElement(draggedId, draggedPatch),
+        ...Array.from(orderUpdates.entries())
+          .filter(([id]) => id !== draggedId)
+          .map(([id, order]) => patchElement(id, { order })),
+        ...changedChildren.map((c) => patchElement(c.id, { posX: c.posX, posY: c.posY })),
+      ]).then(() => onDesignChanged());
+    },
+    [nodes, onDesignChanged],
+  );
+
   const selectedNodesList = nodes.filter((n) => n.selected);
   const selectedElement = selectedNodesList.length === 1 ? selectedNodesList[0].data.element : null;
   const parentElement = selectedElement?.parentId ? nodes.find((n) => n.id === selectedElement.parentId)?.data.element ?? null : null;
@@ -825,7 +947,12 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
       <div className="flex w-64 shrink-0 flex-col border-l border-white/10 bg-[#0b0714]">
         <div className="max-h-[40%] overflow-y-auto border-b border-white/10 p-3">
           <h3 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Katmanlar</h3>
-          <DesignLayersPanel elements={allElements} selectedIds={selectedIds} onSelect={handleLayerSelect} />
+          <DesignLayersPanel
+            elements={allElements}
+            selectedIds={selectedIds}
+            onSelect={handleLayerSelect}
+            onReorder={handleReorderElement}
+          />
         </div>
         <DesignPropertiesPanel
           selectedElement={selectedElement}
