@@ -46,7 +46,7 @@ export function OverviewPanel({ project, onPanelChange, onOpenCreateModal }: Ove
       color: "from-blue-500/20 to-blue-500/5 border-blue-500/20"
     },
     {
-      label: "Figma Bağlantıları",
+      label: "Figma Eşleştirme",
       value: project._count.links,
       icon: (
         <svg className="w-6 h-6 text-fuchsia-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -107,7 +107,7 @@ export function OverviewPanel({ project, onPanelChange, onOpenCreateModal }: Ove
           <div>
             <h3 className="text-xl font-bold text-white mb-4">Proje Özeti</h3>
             <p className="text-zinc-400 text-sm leading-relaxed mb-6">
-              Bu projede tasarladığınız SQL tabloları ile Figma ekranlarınızdaki görsel bileşenleri eşleştirebilirsiniz. Şemalarda veya tasarımlarda oluşacak uyumsuzluklar (drift) anında tespit edilerek Figma Bağlantıları panelinde listelenecektir.
+              Bu projede tasarladığınız SQL tabloları ile Figma ekranlarınızdaki görsel bileşenleri eşleştirebilirsiniz. Şemalarda veya tasarımlarda oluşacak uyumsuzluklar (drift) anında tespit edilerek Tasarım panelinde listelenecektir.
             </p>
             <div className="grid grid-cols-2 gap-4 text-xs font-mono border-t border-white/5 pt-4">
               <div>

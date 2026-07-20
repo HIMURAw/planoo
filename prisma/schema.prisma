@@ -233,8 +233,52 @@ model Project {
   schemaSnapshots   SchemaSnapshot[]
   costEstimateInput CostEstimateInput?
   canvasNotes       CanvasNote[]
+  designElements    DesignElement[]
 
   @@unique([userId, name])
+}
+
+// A closed, planoo-controlled set (unlike DesignedColumn.dataType, which is
+// free text because SQL types are open-ended) — an enum fits since these
+// are the only shape kinds the design canvas draws.
+enum DesignElementType {
+  rectangle
+  ellipse
+  text
+}
+
+// A single shape on the lightweight design canvas (Tasarım panel's "Tasarım
+// Kanvası" tab) — rectangles/ellipses/text boxes a user draws directly in
+// planoo instead of (or alongside) linking an actual Figma file. Position
+// and size work like DesignedTable's posX/posY (dragged/resized freely,
+// PATCHed when the interaction ends). Style fields are all optional/nullable
+// because they're only meaningful for some element types (fontSize/text for
+// `text`, borderRadius for `rectangle`) — see lib/design-elements.ts for the
+// per-type defaults applied when a field is left unset.
+model DesignElement {
+  id           String            @id @default(cuid())
+  projectId    String
+  type         DesignElementType
+  posX         Float             @default(0)
+  posY         Float             @default(0)
+  width        Float             @default(120)
+  height       Float             @default(80)
+  fillColor    String            @default("#8b5cf6")
+  // Only meaningful for `text` elements.
+  text         String?           @db.Text
+  fontSize     Int?
+  // Only meaningful for `rectangle` elements.
+  borderRadius Int?
+  // Draw/creation order — used as the default layer (z-index) stack order,
+  // higher draws on top. Not the same as createdAt: reordering in the
+  // layers panel rewrites this without changing createdAt.
+  order        Int               @default(0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, order])
 }
 
 // A free-floating sticky note on the schema builder canvas — no schema

@@ -4,13 +4,14 @@ import { useState, useCallback } from "react";
 import { DashboardLayout, type ActivePanel, type ProjectView } from "./DashboardLayout";
 import { OverviewPanel } from "./OverviewPanel";
 import { SchemaPanel } from "./SchemaPanel";
-import { FigmaPanel } from "./FigmaPanel";
+import { DesignPanel } from "./DesignPanel";
 import { RoadmapPanel } from "./RoadmapPanel";
 import { CostPanel } from "./CostPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { CreateProjectModal, type CreateProjectFormData } from "./CreateProjectModal";
 import type { DesignedTable } from "@/components/canvas/SchemaBuilder";
 import type { CanvasNote } from "@/components/canvas/SchemaNoteNode";
+import type { DesignElement } from "@/components/canvas/DesignElementNode";
 import type { LinkView } from "@/components/canvas/types";
 import { getPlan, type PlanId } from "@/lib/pricing";
 
@@ -41,6 +42,7 @@ export function DashboardClient({
   // Project-specific data loaded on demand
   const [designedTables, setDesignedTables] = useState<DesignedTable[]>([]);
   const [canvasNotes, setCanvasNotes] = useState<CanvasNote[]>([]);
+  const [designElements, setDesignElements] = useState<DesignElement[]>([]);
   const [links, setLinks] = useState<LinkView[]>([]);
   const [projectDataLoaded, setProjectDataLoaded] = useState<string | null>(null);
 
@@ -55,6 +57,7 @@ export function DashboardClient({
         const project = data.project;
         setDesignedTables(project.designedTables ?? []);
         setCanvasNotes(project.canvasNotes ?? []);
+        setDesignElements(project.designElements ?? []);
         setLinks(
           (project.links ?? []).map((l: {
             id: string;
@@ -85,6 +88,7 @@ export function DashboardClient({
       setProjectDataLoaded(null);
       setDesignedTables([]);
       setCanvasNotes([]);
+      setDesignElements([]);
       setLinks([]);
       await loadProjectData(projectId);
     },
@@ -111,6 +115,7 @@ export function DashboardClient({
       setProjectDataLoaded(null);
       setDesignedTables([]);
       setCanvasNotes([]);
+      setDesignElements([]);
       setLinks([]);
       setActivePanel("overview");
       return { ok: true };
@@ -206,11 +211,27 @@ export function DashboardClient({
         );
       case "figma":
         return (
-          <FigmaPanel
+          <DesignPanel
             project={activeProject}
             hasFigmaAccount={hasFigmaAccount}
             links={links}
             onLinksChange={setLinks}
+            initialElements={designElements}
+            onDesignChanged={() => {
+              // Same stale-cache-on-remount fix as onSchemaChanged above —
+              // DesignCanvas seeds its nodes once from initialElements and
+              // never re-syncs, so the parent cache must be refreshed after
+              // every mutation or a tab-switch remount reverts the edit.
+              if (activeProjectId) {
+                fetch(`/api/projects/${activeProjectId}`)
+                  .then((r) => r.json())
+                  .then((d) => {
+                    if (d.project) {
+                      setDesignElements(d.project.designElements ?? []);
+                    }
+                  });
+              }
+            }}
             onPanelChange={handlePanelChange}
           />
         );

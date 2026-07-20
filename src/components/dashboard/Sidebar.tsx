@@ -77,7 +77,7 @@ export function Sidebar({ activePanel, onPanelChange, activeProject, plan, proje
     },
     {
       id: "figma",
-      label: "Figma Bağlantıları",
+      label: "Tasarım",
       count: activeProject?._count?.links,
       icon: (
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
