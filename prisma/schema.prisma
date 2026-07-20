@@ -240,45 +240,117 @@ model Project {
 
 // A closed, planoo-controlled set (unlike DesignedColumn.dataType, which is
 // free text because SQL types are open-ended) — an enum fits since these
-// are the only shape kinds the design canvas draws.
+// are the only shape kinds the design canvas draws. `line` deliberately has
+// no dedicated type: the Line tool just creates a `path` with exactly 2
+// anchor points, reusing all of path's rendering/edit code.
 enum DesignElementType {
   rectangle
   ellipse
   text
+  frame
+  image
+  path
 }
 
-// A single shape on the lightweight design canvas (Tasarım panel's "Tasarım
-// Kanvası" tab) — rectangles/ellipses/text boxes a user draws directly in
+enum AutoLayoutDirection {
+  none
+  horizontal
+  vertical
+}
+
+enum AutoLayoutAlign {
+  start
+  center
+  end
+}
+
+enum StrokeStyle {
+  solid
+  dashed
+  dotted
+}
+
+// A single element on the design canvas (Tasarım panel's "Tasarım Kanvası"
+// tab) — shapes, frames, text, images and paths a user draws directly in
 // planoo instead of (or alongside) linking an actual Figma file. Position
 // and size work like DesignedTable's posX/posY (dragged/resized freely,
 // PATCHed when the interaction ends). Style fields are all optional/nullable
-// because they're only meaningful for some element types (fontSize/text for
-// `text`, borderRadius for `rectangle`) — see lib/design-elements.ts for the
-// per-type defaults applied when a field is left unset.
+// because they're only meaningful for some element types — see
+// DesignElementNode.tsx for the per-type rendering that decides which
+// fields actually apply.
 model DesignElement {
-  id           String            @id @default(cuid())
-  projectId    String
-  type         DesignElementType
-  posX         Float             @default(0)
-  posY         Float             @default(0)
-  width        Float             @default(120)
-  height       Float             @default(80)
-  fillColor    String            @default("#8b5cf6")
-  // Only meaningful for `text` elements.
-  text         String?           @db.Text
-  fontSize     Int?
-  // Only meaningful for `rectangle` elements.
-  borderRadius Int?
-  // Draw/creation order — used as the default layer (z-index) stack order,
-  // higher draws on top. Not the same as createdAt: reordering in the
-  // layers panel rewrites this without changing createdAt.
-  order        Int               @default(0)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id        String            @id @default(cuid())
+  projectId String
+  // Self-relation for nesting (Figma-style frames/groups). Null = top-level.
+  // Deleting a frame cascades to its children, same as deleting its
+  // contents in Figma.
+  parentId  String?
+  type      DesignElementType
+  posX      Float             @default(0)
+  posY      Float             @default(0)
+  // When the parent frame has layoutMode != none, posX/posY are recomputed
+  // client-side from sibling order + the parent's layout settings (see
+  // src/lib/auto-layout.ts) rather than being freely draggable — they're
+  // still PATCHed on every recompute so a fresh load renders correctly
+  // without re-running the layout pass first.
+  width     Float             @default(120)
+  height    Float             @default(80)
+  rotation  Float             @default(0)
+  opacity   Float             @default(1)
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fillColor    String  @default("#8b5cf6")
+  // Only meaningful for `text` elements.
+  text         String? @db.Text
+  fontSize     Int?
+  // Only meaningful for `rectangle`/`frame` elements.
+  borderRadius Int?
+
+  strokeColor String?
+  strokeWidth Float       @default(0)
+  strokeStyle StrokeStyle @default(solid)
+
+  // Array of {type: "shadow", color, x, y, blur, spread} — a plain JSON
+  // list rather than a child table, since effects are small, always
+  // read/written as a whole with their owning element, and never queried
+  // independently.
+  effects Json?
+
+  // Only meaningful for `path` elements (this includes the dedicated Line
+  // tool, which just creates a 2-point path) — an ordered array of
+  // {x, y} anchor points in the element's own local coordinate space.
+  // Straight segments only, no bezier control handles.
+  pathData Json?
+
+  // Only meaningful for `image` elements. Stored as a data: URL directly —
+  // there's no object-storage integration (S3/etc.) in this project, so
+  // this is the pragmatic v0 path (see TODOS.md). Client-side upload caps
+  // file size to keep this from becoming a runaway column.
+  imageData String? @db.LongText
+
+  // Auto layout — only meaningful for `frame` elements. The frame's own
+  // size stays fixed (no "hug contents"/"fill container" sizing modes,
+  // unlike Figma) — children are arranged within that fixed box.
+  layoutMode    AutoLayoutDirection @default(none)
+  layoutGap     Float               @default(8)
+  paddingTop    Float               @default(16)
+  paddingRight  Float               @default(16)
+  paddingBottom Float               @default(16)
+  paddingLeft   Float               @default(16)
+  layoutAlign   AutoLayoutAlign     @default(start)
+
+  // Draw/creation order, scoped to siblings sharing the same parentId (not
+  // global) — used both as z-index stack order and, for auto-layout
+  // frames, as the actual arrangement order along the main axis.
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent   DesignElement?  @relation("DesignElementChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children DesignElement[] @relation("DesignElementChildren")
 
   @@index([projectId, order])
+  @@index([parentId, order])
 }
 
 // A free-floating sticky note on the schema builder canvas — no schema

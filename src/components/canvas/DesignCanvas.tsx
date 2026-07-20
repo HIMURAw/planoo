@@ -9,6 +9,7 @@ import {
   Panel,
   applyNodeChanges,
   useReactFlow,
+  useViewport,
   type Node,
   type NodeChange,
   type Viewport,
@@ -21,6 +22,10 @@ import {
   type DesignElementType,
   type DesignElementNodeType,
 } from "./DesignElementNode";
+import { DesignLayersPanel } from "./DesignLayersPanel";
+import { DesignPropertiesPanel } from "./DesignPropertiesPanel";
+import { computeAutoLayoutPositions } from "@/lib/auto-layout";
+import { compressImageToDataUrl, getImageDimensions } from "@/lib/design-image";
 
 interface DesignCanvasProps {
   projectId: string;
@@ -30,29 +35,134 @@ interface DesignCanvasProps {
 
 const nodeTypes = { designElement: DesignElementNode };
 
-const DEFAULT_SIZE: Record<DesignElementType, { width: number; height: number }> = {
+type Tool = "select" | "rectangle" | "ellipse" | "text" | "frame" | "line" | "pen" | "image";
+const DRAW_GROUP: Tool[] = ["rectangle", "ellipse", "text", "frame", "line"];
+
+const DEFAULT_SIZE: Record<"rectangle" | "ellipse" | "text" | "frame", { width: number; height: number }> = {
   rectangle: { width: 140, height: 90 },
   ellipse: { width: 120, height: 120 },
   text: { width: 180, height: 36 },
+  frame: { width: 320, height: 200 },
 };
 
-const FILL_PRESETS = ["#8b5cf6", "#ec4899", "#22c55e", "#3b82f6", "#f59e0b", "#ef4444", "#e5e7eb", "#18181b"];
+const TOOL_BUTTONS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "select", label: "Seç", icon: "↖" },
+  { tool: "rectangle", label: "Dikdörtgen", icon: "▭" },
+  { tool: "ellipse", label: "Elips", icon: "◯" },
+  { tool: "text", label: "Metin", icon: "T" },
+  { tool: "frame", label: "Çerçeve", icon: "⬚" },
+  { tool: "line", label: "Çizgi", icon: "╱" },
+  { tool: "pen", label: "Kalem", icon: "✎" },
+  { tool: "image", label: "Görsel", icon: "🖼" },
+];
 
-function elementToNode(element: DesignElement): DesignElementNodeType {
+function patchElement(id: string, patch: Record<string, unknown>) {
+  return fetch(`/api/design/elements/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+
+// Parent must appear before its children in React Flow's `nodes` array for
+// its native parentId nesting to render correctly.
+function topoSortElements(elements: DesignElement[]): DesignElement[] {
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  const visited = new Set<string>();
+  const result: DesignElement[] = [];
+  function visit(el: DesignElement) {
+    if (visited.has(el.id)) return;
+    visited.add(el.id);
+    if (el.parentId) {
+      const parent = byId.get(el.parentId);
+      if (parent) visit(parent);
+    }
+    result.push(el);
+  }
+  for (const el of elements) visit(el);
+  return result;
+}
+
+function elementToNode(element: DesignElement, parent: DesignElement | undefined): DesignElementNodeType {
+  const isAutoLayoutChild = !!parent && parent.type === "frame" && parent.layoutMode !== "none";
   return {
     id: element.id,
     type: "designElement",
     position: { x: element.posX, y: element.posY },
     data: { element },
     style: { width: element.width, height: element.height },
+    ...(element.parentId ? { parentId: element.parentId, extent: "parent" as const } : {}),
+    draggable: !isAutoLayoutChild,
   };
 }
 
+function buildNodesFromElements(elements: DesignElement[]): DesignElementNodeType[] {
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  const sorted = topoSortElements(elements);
+  return sorted.map((el) => elementToNode(el, el.parentId ? byId.get(el.parentId) : undefined));
+}
+
+function collectDescendantIds(id: string, allNodes: DesignElementNodeType[]): Set<string> {
+  const result = new Set<string>([id]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const n of allNodes) {
+      const pid = n.data.element.parentId;
+      if (pid && result.has(pid) && !result.has(n.id)) {
+        result.add(n.id);
+        changed = true;
+      }
+    }
+  }
+  return result;
+}
+
+// Recomputes an auto-layout frame's children positions and returns both the
+// updated node array (local, optimistic) and the list of children whose
+// position actually moved (so the caller knows what to PATCH to the
+// backend) — kept pure so it's safe to call from inside handlers that also
+// need to setNodes synchronously (fetches must never live inside a setState
+// updater — see the impure-updater note this session established in
+// SchemaBuilder.tsx).
+function computeAutoLayoutNodeUpdates(
+  frameId: string,
+  allNodes: DesignElementNodeType[],
+): { nodes: DesignElementNodeType[]; changed: { id: string; posX: number; posY: number }[] } {
+  const frameNode = allNodes.find((n) => n.id === frameId);
+  if (!frameNode || frameNode.data.element.type !== "frame" || frameNode.data.element.layoutMode === "none") {
+    return { nodes: allNodes, changed: [] };
+  }
+  const frameEl = frameNode.data.element;
+  const children = allNodes.filter((n) => n.data.element.parentId === frameId);
+  const positions = computeAutoLayoutPositions(
+    {
+      layoutMode: frameEl.layoutMode,
+      layoutGap: frameEl.layoutGap,
+      paddingTop: frameEl.paddingTop,
+      paddingRight: frameEl.paddingRight,
+      paddingBottom: frameEl.paddingBottom,
+      paddingLeft: frameEl.paddingLeft,
+      layoutAlign: frameEl.layoutAlign,
+      width: frameEl.width,
+      height: frameEl.height,
+    },
+    children.map((c) => ({ id: c.id, width: c.data.element.width, height: c.data.element.height, order: c.data.element.order })),
+  );
+  const posMap = new Map(positions.map((p) => [p.id, p]));
+  const changed: { id: string; posX: number; posY: number }[] = [];
+  const nextNodes = allNodes.map((n) => {
+    const pos = posMap.get(n.id);
+    if (!pos || (n.position.x === pos.posX && n.position.y === pos.posY)) return n;
+    changed.push({ id: n.id, posX: pos.posX, posY: pos.posY });
+    return { ...n, position: { x: pos.posX, y: pos.posY }, data: { element: { ...n.data.element, posX: pos.posX, posY: pos.posY } } };
+  });
+  return { nodes: nextNodes, changed };
+}
+
 // Same Provider/Inner split as SchemaBuilder, for the same reason —
-// useReactFlow()'s screenToFlowPosition is needed to translate the
-// draw-to-size drag (tracked in raw screen pixels, see handleWrapperMouseDown
-// below) into canvas coordinates, and that hook only works from inside the
-// context <ReactFlow> itself establishes.
+// useReactFlow()'s screenToFlowPosition only works inside the context
+// <ReactFlow> itself establishes.
 export function DesignCanvas(props: DesignCanvasProps) {
   return (
     <ReactFlowProvider>
@@ -61,28 +171,35 @@ export function DesignCanvas(props: DesignCanvasProps) {
   );
 }
 
-type Tool = "select" | DesignElementType;
-
 function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: DesignCanvasProps) {
-  const [nodes, setNodes] = useState<DesignElementNodeType[]>(() => initialElements.map(elementToNode));
+  const [nodes, setNodes] = useState<DesignElementNodeType[]>(() => buildNodesFromElements(initialElements));
   const [activeTool, setActiveTool] = useState<Tool>("select");
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
+  const viewport = useViewport();
 
-  // Live draw-to-size ghost preview — tracked in screen (wrapper-relative)
-  // pixels rather than flow coordinates, since the overlay is a plain CSS
-  // absolutely-positioned div drawn directly over the wrapper. Converting
-  // to flow coordinates only has to happen once, at mouseup, to place the
-  // real element — not on every mousemove, which keeps this simple and
-  // avoids re-deriving React Flow's pan/zoom transform by hand.
-  const [drawTool, setDrawTool] = useState<DesignElementType | null>(null);
+  // Draw-to-size ghost preview (rectangle/ellipse/text/frame/line) — tracked
+  // in screen (wrapper-relative) pixels; only converted to flow coordinates
+  // once, at mouseup, to place the real element.
+  const [drawTool, setDrawTool] = useState<Tool | null>(null);
   const [drawRect, setDrawRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const drawStartScreenRef = useRef<{ x: number; y: number } | null>(null);
   const drawCurrentScreenRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Same per-project sessionStorage viewport persistence as SchemaBuilder,
-  // for the same reason (fitView recenters on every remount otherwise).
+  // Pen tool: click to add anchor points (flow coordinates), Enter/double-
+  // click to finish, Escape to cancel. Straight segments only — no bezier
+  // control-handle editing.
+  const [penPoints, setPenPoints] = useState<{ x: number; y: number }[] | null>(null);
+  const [penCursor, setPenCursor] = useState<{ x: number; y: number } | null>(null);
+
+  // Image tool: picking a file arms "click to place" mode. The actual data
+  // lives in a ref (only ever read from event handlers, never rendered
+  // directly); `hasPendingImage` is a small state mirror purely so the hint
+  // text below can react to it without reading the ref during render.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingImageRef = useRef<{ dataUrl: string; naturalWidth: number; naturalHeight: number } | null>(null);
+  const [hasPendingImage, setHasPendingImage] = useState(false);
+
   const viewportStorageKey = `planoo:design-viewport:${projectId}`;
   const [initialViewport] = useState<Viewport | null>(() => {
     if (typeof window === "undefined") return null;
@@ -95,8 +212,8 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
     }
   });
   const handleMoveEnd = useCallback(
-    (_event: unknown, viewport: Viewport) => {
-      window.sessionStorage.setItem(viewportStorageKey, JSON.stringify(viewport));
+    (_event: unknown, vp: Viewport) => {
+      window.sessionStorage.setItem(viewportStorageKey, JSON.stringify(vp));
     },
     [viewportStorageKey],
   );
@@ -106,81 +223,153 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
   }, []);
 
   const handleNodeDragStop = useCallback(
-    (_event: unknown, node: Node) => {
-      fetch(`/api/design/elements/${node.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ posX: node.position.x, posY: node.position.y }),
-      }).then(() => onDesignChanged());
+    (_event: unknown, node: Node, draggedNodes: Node[]) => {
+      const toPersist = draggedNodes.length > 0 ? draggedNodes : [node];
+      Promise.all(toPersist.map((n) => patchElement(n.id, { posX: n.position.x, posY: n.position.y }))).then(() =>
+        onDesignChanged(),
+      );
     },
     [onDesignChanged],
   );
 
   const handleResizeEnd = useCallback(
     (id: string, rect: { x: number; y: number; width: number; height: number }) => {
-      const next = nodes.map((n) =>
+      const current = nodes;
+      const target = current.find((n) => n.id === id);
+      if (!target) return;
+
+      let next = current.map((n) =>
         n.id === id
-          ? { ...n, position: { x: rect.x, y: rect.y }, style: { width: rect.width, height: rect.height } }
+          ? {
+              ...n,
+              position: { x: rect.x, y: rect.y },
+              style: { width: rect.width, height: rect.height },
+              data: { element: { ...n.data.element, posX: rect.x, posY: rect.y, width: rect.width, height: rect.height } },
+            }
           : n,
       );
+
+      let changedChildren: { id: string; posX: number; posY: number }[] = [];
+      const el = target.data.element;
+      if (el.type === "frame" && el.layoutMode !== "none") {
+        const result = computeAutoLayoutNodeUpdates(id, next);
+        next = result.nodes;
+        changedChildren = result.changed;
+      } else if (el.parentId) {
+        const parentEl = next.find((n) => n.id === el.parentId)?.data.element;
+        if (parentEl?.type === "frame" && parentEl.layoutMode !== "none") {
+          const result = computeAutoLayoutNodeUpdates(el.parentId, next);
+          next = result.nodes;
+          changedChildren = result.changed;
+        }
+      }
+
       setNodes(next);
-      fetch(`/api/design/elements/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ posX: rect.x, posY: rect.y, width: rect.width, height: rect.height }),
-      }).then(() => onDesignChanged());
+      Promise.all([
+        patchElement(id, { posX: rect.x, posY: rect.y, width: rect.width, height: rect.height }),
+        ...changedChildren.map((c) => patchElement(c.id, { posX: c.posX, posY: c.posY })),
+      ]).then(() => onDesignChanged());
     },
     [nodes, onDesignChanged],
   );
 
   const handleUpdateElementText = useCallback(
     (id: string, text: string) => {
-      const next = nodes.map((n) =>
-        n.id === id ? { ...n, data: { element: { ...n.data.element, text } } } : n,
+      const next = nodes.map((n) => (n.id === id ? { ...n, data: { element: { ...n.data.element, text } } } : n));
+      setNodes(next);
+      patchElement(id, { text }).then(() => onDesignChanged());
+    },
+    [nodes, onDesignChanged],
+  );
+
+  const handleUpdateElement = useCallback(
+    (id: string, patch: Partial<DesignElement>) => {
+      const current = nodes;
+      const target = current.find((n) => n.id === id);
+      if (!target) return;
+      const updatedElement: DesignElement = { ...target.data.element, ...patch };
+
+      let next = current.map((n) =>
+        n.id === id
+          ? {
+              ...n,
+              position:
+                patch.posX !== undefined || patch.posY !== undefined
+                  ? { x: updatedElement.posX, y: updatedElement.posY }
+                  : n.position,
+              style:
+                patch.width !== undefined || patch.height !== undefined
+                  ? { width: updatedElement.width, height: updatedElement.height }
+                  : n.style,
+              data: { element: updatedElement },
+            }
+          : n,
       );
+
+      let changedChildren: { id: string; posX: number; posY: number }[] = [];
+      const layoutFieldsChanged =
+        patch.layoutMode !== undefined ||
+        patch.layoutGap !== undefined ||
+        patch.paddingTop !== undefined ||
+        patch.paddingRight !== undefined ||
+        patch.paddingBottom !== undefined ||
+        patch.paddingLeft !== undefined ||
+        patch.layoutAlign !== undefined ||
+        patch.width !== undefined ||
+        patch.height !== undefined;
+
+      if (updatedElement.type === "frame" && layoutFieldsChanged) {
+        const result = computeAutoLayoutNodeUpdates(id, next);
+        next = result.nodes;
+        changedChildren = result.changed;
+      }
+
       setNodes(next);
-      fetch(`/api/design/elements/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      }).then(() => onDesignChanged());
+      Promise.all([
+        patchElement(id, patch as Record<string, unknown>),
+        ...changedChildren.map((c) => patchElement(c.id, { posX: c.posX, posY: c.posY })),
+      ]).then(() => onDesignChanged());
     },
     [nodes, onDesignChanged],
   );
 
-  // Shared by the properties panel's fill/font-size/border-radius inputs —
-  // all just PATCH a single field and update the matching node's data.
-  const handleUpdateElementStyle = useCallback(
-    (id: string, patch: Partial<Pick<DesignElement, "fillColor" | "fontSize" | "borderRadius">>) => {
-      const next = nodes.map((n) =>
-        n.id === id ? { ...n, data: { element: { ...n.data.element, ...patch } } } : n,
-      );
+  const deleteElementsByIds = useCallback(
+    (ids: string[]) => {
+      const current = nodes;
+      const idsToDelete = new Set<string>();
+      for (const id of ids) {
+        for (const descId of collectDescendantIds(id, current)) idsToDelete.add(descId);
+      }
+      if (idsToDelete.size === 0) return;
+
+      const affectedParentIds = new Set<string>();
+      for (const id of idsToDelete) {
+        const el = current.find((n) => n.id === id)?.data.element;
+        if (el?.parentId && !idsToDelete.has(el.parentId)) affectedParentIds.add(el.parentId);
+      }
+
+      let next = current.filter((n) => !idsToDelete.has(n.id));
+      let changedChildren: { id: string; posX: number; posY: number }[] = [];
+      for (const parentId of affectedParentIds) {
+        const parentEl = next.find((n) => n.id === parentId)?.data.element;
+        if (parentEl?.type === "frame" && parentEl.layoutMode !== "none") {
+          const result = computeAutoLayoutNodeUpdates(parentId, next);
+          next = result.nodes;
+          changedChildren = [...changedChildren, ...result.changed];
+        }
+      }
+
       setNodes(next);
-      fetch(`/api/design/elements/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      }).then(() => onDesignChanged());
+      Promise.all([
+        ...Array.from(idsToDelete).map((id) => fetch(`/api/design/elements/${id}`, { method: "DELETE" })),
+        ...changedChildren.map((c) => patchElement(c.id, { posX: c.posX, posY: c.posY })),
+      ]).then(() => onDesignChanged());
     },
     [nodes, onDesignChanged],
   );
 
-  const handleDeleteElement = useCallback(
-    (id: string) => {
-      const next = nodes.filter((n) => n.id !== id);
-      setNodes(next);
-      setSelectedElementId((current) => (current === id ? null : current));
-      fetch(`/api/design/elements/${id}`, { method: "DELETE" }).then(() => onDesignChanged());
-    },
-    [nodes, onDesignChanged],
-  );
-
-  const handleNodesDelete = useCallback(
-    (deleted: Node[]) => {
-      for (const node of deleted) handleDeleteElement(node.id);
-    },
-    [handleDeleteElement],
-  );
+  const handleDeleteElement = useCallback((id: string) => deleteElementsByIds([id]), [deleteElementsByIds]);
+  const handleNodesDelete = useCallback((deleted: Node[]) => deleteElementsByIds(deleted.map((d) => d.id)), [deleteElementsByIds]);
 
   const canvasHandlers = useMemo(
     () => ({
@@ -192,30 +381,28 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
   );
 
   const handleCreateElement = useCallback(
-    async (type: DesignElementType, rect: { x: number; y: number; width: number; height: number }) => {
+    async (
+      type: DesignElementType,
+      rect: { x: number; y: number; width: number; height: number },
+      extra?: Record<string, unknown>,
+    ) => {
       const response = await fetch("/api/design/elements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          type,
-          posX: rect.x,
-          posY: rect.y,
-          width: rect.width,
-          height: rect.height,
-        }),
+        body: JSON.stringify({ projectId, type, posX: rect.x, posY: rect.y, width: rect.width, height: rect.height, ...extra }),
       });
       const data = (await response.json()) as { element?: DesignElement };
       if (!response.ok || !data.element) return;
-      setNodes((prev) => [...prev, elementToNode(data.element!)]);
-      setSelectedElementId(data.element.id);
+      const created = data.element;
+      setNodes((prev) => [...prev, elementToNode(created, undefined)].map((n) => ({ ...n, selected: n.id === created.id })));
       onDesignChanged();
     },
     [projectId, onDesignChanged],
   );
 
+  // --- Draw-to-size tools: rectangle / ellipse / text / frame / line ---
   function handleWrapperMouseDown(e: React.MouseEvent) {
-    if (activeTool === "select") return;
+    if (!DRAW_GROUP.includes(activeTool)) return;
     const bounds = canvasWrapperRef.current?.getBoundingClientRect();
     if (!bounds) return;
     const start = { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
@@ -257,11 +444,29 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
       const pxWidth = Math.abs(current.x - start.x);
       const pxHeight = Math.abs(current.y - start.y);
       const isClick = pxWidth < 5 && pxHeight < 5;
-      const defaultSize = DEFAULT_SIZE[tool];
+
+      if (tool === "line") {
+        if (isClick) return;
+        const startFlow = screenToFlowPosition({ x: start.x + bounds.left, y: start.y + bounds.top });
+        const endFlow = screenToFlowPosition({ x: current.x + bounds.left, y: current.y + bounds.top });
+        const minX = Math.min(startFlow.x, endFlow.x);
+        const minY = Math.min(startFlow.y, endFlow.y);
+        const width = Math.max(Math.abs(endFlow.x - startFlow.x), 1);
+        const height = Math.max(Math.abs(endFlow.y - startFlow.y), 1);
+        const pathData = [
+          { x: startFlow.x - minX, y: startFlow.y - minY },
+          { x: endFlow.x - minX, y: endFlow.y - minY },
+        ];
+        handleCreateElement("path", { x: minX, y: minY, width, height }, { pathData, strokeColor: "#8b5cf6", strokeWidth: 2 });
+        return;
+      }
+
+      const elementType = tool as "rectangle" | "ellipse" | "text" | "frame";
+      const defaultSize = DEFAULT_SIZE[elementType];
 
       if (isClick) {
         const clickFlow = screenToFlowPosition({ x: start.x + bounds.left, y: start.y + bounds.top });
-        handleCreateElement(tool, {
+        handleCreateElement(elementType, {
           x: clickFlow.x - defaultSize.width / 2,
           y: clickFlow.y - defaultSize.height / 2,
           width: defaultSize.width,
@@ -274,7 +479,7 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
       const screenTop = Math.min(start.y, current.y) + bounds.top;
       const topLeftFlow = screenToFlowPosition({ x: screenLeft, y: screenTop });
       const bottomRightFlow = screenToFlowPosition({ x: screenLeft + pxWidth, y: screenTop + pxHeight });
-      handleCreateElement(tool, {
+      handleCreateElement(elementType, {
         x: topLeftFlow.x,
         y: topLeftFlow.y,
         width: bottomRightFlow.x - topLeftFlow.x,
@@ -290,49 +495,239 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
     };
   }, [drawTool, screenToFlowPosition, handleCreateElement]);
 
-  function handlePaneClick() {
+  // --- Pen tool: multi-click polyline ---
+  const commitPenPath = useCallback(() => {
+    const pts = penPoints;
+    setPenPoints(null);
+    setPenCursor(null);
+    setActiveTool("select");
+    if (!pts || pts.length < 2) return;
+    const minX = Math.min(...pts.map((p) => p.x));
+    const minY = Math.min(...pts.map((p) => p.y));
+    const maxX = Math.max(...pts.map((p) => p.x));
+    const maxY = Math.max(...pts.map((p) => p.y));
+    const width = Math.max(maxX - minX, 1);
+    const height = Math.max(maxY - minY, 1);
+    const localPoints = pts.map((p) => ({ x: p.x - minX, y: p.y - minY }));
+    handleCreateElement("path", { x: minX, y: minY, width, height }, { pathData: localPoints, strokeColor: "#8b5cf6", strokeWidth: 2 });
+  }, [penPoints, handleCreateElement]);
+
+  const cancelPenPath = useCallback(() => {
+    setPenPoints(null);
+    setPenCursor(null);
+    setActiveTool("select");
+  }, []);
+
+  useEffect(() => {
+    if (!penPoints) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Enter") commitPenPath();
+      else if (e.key === "Escape") cancelPenPath();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [penPoints, commitPenPath, cancelPenPath]);
+
+  function handleWrapperMouseMove(e: React.MouseEvent) {
+    if (activeTool === "pen" && penPoints) {
+      setPenCursor(screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+    }
+  }
+
+  function handleWrapperDoubleClick() {
+    if (activeTool === "pen" && penPoints && penPoints.length >= 2) commitPenPath();
+  }
+
+  // --- Image tool ---
+  function handleSelectImageTool() {
+    setActiveTool("image");
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) {
+      setActiveTool("select");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      window.alert("Lütfen bir görsel dosyası seçin.");
+      setActiveTool("select");
+      return;
+    }
+    const dataUrl = await compressImageToDataUrl(file);
+    if (!dataUrl) {
+      window.alert("Görsel işlenemedi.");
+      setActiveTool("select");
+      return;
+    }
+    const dims = await getImageDimensions(dataUrl).catch(() => ({ width: 200, height: 150 }));
+    pendingImageRef.current = { dataUrl, naturalWidth: dims.width, naturalHeight: dims.height };
+    setHasPendingImage(true);
+  }
+
+  // --- Pane click: pen point / image placement / deselect ---
+  function handlePaneClick(event: MouseEvent | React.MouseEvent) {
+    if (activeTool === "pen") {
+      const flow = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      setPenPoints((prev) => (prev ? [...prev, flow] : [flow]));
+      return;
+    }
+    if (activeTool === "image") {
+      const pending = pendingImageRef.current;
+      if (!pending) return;
+      const flow = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const maxDim = 240;
+      const scale = Math.min(maxDim / pending.naturalWidth, maxDim / pending.naturalHeight, 1);
+      const width = Math.round(pending.naturalWidth * scale);
+      const height = Math.round(pending.naturalHeight * scale);
+      handleCreateElement("image", { x: flow.x - width / 2, y: flow.y - height / 2, width, height }, { imageData: pending.dataUrl });
+      pendingImageRef.current = null;
+      setHasPendingImage(false);
+      setActiveTool("select");
+      return;
+    }
     if (drawTool) return;
-    setSelectedElementId(null);
+    setNodes((prev) => prev.map((n) => (n.selected ? { ...n, selected: false } : n)));
   }
 
-  function handleNodeClick(_event: unknown, node: Node) {
-    setSelectedElementId(node.id);
+  function handleLayerSelect(id: string, additive: boolean) {
+    setNodes((prev) =>
+      prev.map((n) => (additive ? (n.id === id ? { ...n, selected: !n.selected } : n) : { ...n, selected: n.id === id })),
+    );
   }
 
-  const selectedElement = nodes.find((n) => n.id === selectedElementId)?.data.element ?? null;
+  // --- Group / Ungroup ---
+  const handleGroupSelected = useCallback(async () => {
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length < 2) return;
+    const parentId = selected[0].data.element.parentId ?? null;
 
-  // Layers panel order: highest-drawn (last in array/top of stack) first,
-  // matching how design tools conventionally list layers top-to-bottom.
-  const layersTopToBottom = useMemo(() => [...nodes].reverse(), [nodes]);
+    const PAD = 24;
+    const minX = Math.min(...selected.map((n) => n.data.element.posX));
+    const minY = Math.min(...selected.map((n) => n.data.element.posY));
+    const maxX = Math.max(...selected.map((n) => n.data.element.posX + n.data.element.width));
+    const maxY = Math.max(...selected.map((n) => n.data.element.posY + n.data.element.height));
+    const frameRect = { x: minX - PAD, y: minY - PAD, width: maxX - minX + PAD * 2, height: maxY - minY + PAD * 2 };
 
-  const toolButtons: { tool: Tool; label: string; icon: string }[] = [
-    { tool: "select", label: "Seç", icon: "↖" },
-    { tool: "rectangle", label: "Dikdörtgen", icon: "▭" },
-    { tool: "ellipse", label: "Elips", icon: "◯" },
-    { tool: "text", label: "Metin", icon: "T" },
-  ];
+    const response = await fetch("/api/design/elements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        type: "frame",
+        parentId,
+        posX: frameRect.x,
+        posY: frameRect.y,
+        width: frameRect.width,
+        height: frameRect.height,
+        fillColor: "transparent",
+      }),
+    });
+    const data = (await response.json()) as { element?: DesignElement };
+    if (!response.ok || !data.element) return;
+    const frameElement = data.element;
+
+    const patches = selected.map((n) => ({
+      id: n.id,
+      parentId: frameElement.id,
+      posX: n.data.element.posX - frameRect.x,
+      posY: n.data.element.posY - frameRect.y,
+    }));
+
+    await Promise.all(patches.map((p) => patchElement(p.id, { parentId: p.parentId, posX: p.posX, posY: p.posY })));
+
+    const patchMap = new Map(patches.map((p) => [p.id, p]));
+    const updatedElements: DesignElement[] = nodes.map((n) => {
+      const p = patchMap.get(n.id);
+      return p ? { ...n.data.element, parentId: p.parentId, posX: p.posX, posY: p.posY } : n.data.element;
+    });
+    const allElements = [...updatedElements, frameElement];
+    const rebuilt = buildNodesFromElements(allElements).map((n) => ({ ...n, selected: n.id === frameElement.id }));
+    setNodes(rebuilt);
+    onDesignChanged();
+  }, [nodes, projectId, onDesignChanged]);
+
+  const handleUngroupSelected = useCallback(async () => {
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length !== 1 || selected[0].data.element.type !== "frame") return;
+    const frame = selected[0].data.element;
+    const children = nodes.filter((n) => n.data.element.parentId === frame.id);
+
+    if (children.length === 0) {
+      handleDeleteElement(frame.id);
+      return;
+    }
+
+    const patches = children.map((n) => ({
+      id: n.id,
+      parentId: frame.parentId,
+      posX: n.data.element.posX + frame.posX,
+      posY: n.data.element.posY + frame.posY,
+    }));
+
+    // Reparent children FIRST, then delete the now-empty frame — doing this
+    // concurrently would race the frame's ON DELETE CASCADE against the
+    // reparent PATCHes and could delete children before they'd moved out.
+    await Promise.all(patches.map((p) => patchElement(p.id, { parentId: p.parentId, posX: p.posX, posY: p.posY })));
+    await fetch(`/api/design/elements/${frame.id}`, { method: "DELETE" });
+
+    const patchMap = new Map(patches.map((p) => [p.id, p]));
+    const remainingElements: DesignElement[] = nodes
+      .filter((n) => n.id !== frame.id)
+      .map((n) => {
+        const p = patchMap.get(n.id);
+        return p ? { ...n.data.element, parentId: p.parentId, posX: p.posX, posY: p.posY } : n.data.element;
+      });
+    const rebuilt = buildNodesFromElements(remainingElements).map((n) => ({ ...n, selected: patchMap.has(n.id) }));
+    setNodes(rebuilt);
+    onDesignChanged();
+  }, [nodes, onDesignChanged, handleDeleteElement]);
+
+  const selectedNodesList = nodes.filter((n) => n.selected);
+  const selectedElement = selectedNodesList.length === 1 ? selectedNodesList[0].data.element : null;
+  const parentElement = selectedElement?.parentId ? nodes.find((n) => n.id === selectedElement.parentId)?.data.element ?? null : null;
+  const allElements = useMemo(() => nodes.map((n) => n.data.element), [nodes]);
+  const selectedIds = useMemo(() => new Set(selectedNodesList.map((n) => n.id)), [selectedNodesList]);
+
+  const canGroup =
+    selectedNodesList.length >= 2 &&
+    selectedNodesList.every((n) => (n.data.element.parentId ?? null) === (selectedNodesList[0].data.element.parentId ?? null));
+  const canUngroup = selectedNodesList.length === 1 && selectedNodesList[0].data.element.type === "frame";
+
+  // The pen-preview <svg> overlay below is an absolute inset-0 sibling of
+  // <ReactFlow> inside the same wrapper div, so it shares the exact same
+  // top-left origin as the flow pane — no extra bounds subtraction needed,
+  // just React Flow's own pan/zoom transform.
+  function screenPoint(flowPoint: { x: number; y: number }): { x: number; y: number } {
+    return { x: flowPoint.x * viewport.zoom + viewport.x, y: flowPoint.y * viewport.zoom + viewport.y };
+  }
 
   return (
     <div className="relative flex h-full w-full">
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChosen} className="hidden" />
+
       <div
-        className="relative flex-1"
+        className={`relative flex-1 ${activeTool !== "select" ? "cursor-crosshair" : ""}`}
         ref={canvasWrapperRef}
         onMouseDown={handleWrapperMouseDown}
+        onMouseMove={handleWrapperMouseMove}
+        onDoubleClick={handleWrapperDoubleClick}
       >
         <DesignCanvasProvider value={canvasHandlers}>
           <ReactFlow
-            nodes={nodes.map((n) => ({ ...n, selected: n.id === selectedElementId }))}
+            nodes={nodes}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onNodeDragStop={handleNodeDragStop}
             onNodesDelete={handleNodesDelete}
-            onNodeClick={handleNodeClick}
             onPaneClick={handlePaneClick}
             onMoveEnd={handleMoveEnd}
             panOnDrag={activeTool === "select"}
+            multiSelectionKeyCode={["Shift", "Meta", "Control"]}
             deleteKeyCode={["Backspace", "Delete"]}
             colorMode="dark"
-            className={activeTool !== "select" ? "cursor-crosshair" : undefined}
             {...(initialViewport ? { defaultViewport: initialViewport } : { fitView: true })}
             proOptions={{ hideAttribution: true }}
           >
@@ -340,17 +735,17 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
             <Controls style={{ bottom: 16 }} />
 
             <Panel position="top-left">
-              <div className="glass-panel flex items-center gap-1 rounded-xl p-1.5">
-                {toolButtons.map(({ tool, label, icon }) => (
+              <div className="glass-panel flex flex-wrap items-center gap-1 rounded-xl p-1.5">
+                {TOOL_BUTTONS.map(({ tool, label, icon }) => (
                   <button
                     key={tool}
                     type="button"
                     title={label}
-                    onClick={() => setActiveTool(tool)}
+                    onClick={() => (tool === "image" ? handleSelectImageTool() : setActiveTool(tool))}
                     className={`flex h-9 w-9 items-center justify-center rounded-lg text-base font-medium transition-colors ${
                       activeTool === tool
-                        ? "bg-violet-500/30 text-violet-200 border border-violet-400/60"
-                        : "text-zinc-300 hover:bg-white/10 border border-transparent"
+                        ? "border border-violet-400/60 bg-violet-500/30 text-violet-200"
+                        : "border border-transparent text-zinc-300 hover:bg-white/10"
                     }`}
                   >
                     {icon}
@@ -359,11 +754,40 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
               </div>
             </Panel>
 
+            {(canGroup || canUngroup) && (
+              <Panel position="top-center">
+                <div className="glass-panel flex items-center gap-1 rounded-xl p-1.5">
+                  {canGroup && (
+                    <button
+                      onClick={handleGroupSelected}
+                      className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-white/10"
+                    >
+                      Grupla
+                    </button>
+                  )}
+                  {canUngroup && (
+                    <button
+                      onClick={handleUngroupSelected}
+                      className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-white/10"
+                    >
+                      Grubu Çöz
+                    </button>
+                  )}
+                </div>
+              </Panel>
+            )}
+
             <Panel position="bottom-left">
               <p className="glass-panel rounded-lg px-3 py-1.5 text-[11px] text-zinc-400">
-                {activeTool === "select"
-                  ? "Bir şekil eklemek için üstteki araçlardan birini seçin"
-                  : "Kanvasa tıklayın ya da sürükleyerek boyutunu belirleyin"}
+                {activeTool === "pen"
+                  ? "Nokta eklemek için tıklayın, bitirmek için Enter/çift tık, iptal için Esc"
+                  : activeTool === "image"
+                    ? hasPendingImage
+                      ? "Yerleştirmek için kanvasa tıklayın"
+                      : "Bir görsel dosyası seçin"
+                    : activeTool === "select"
+                      ? "Bir eleman eklemek için üstteki araçlardan birini seçin"
+                      : "Kanvasa tıklayın ya da sürükleyerek boyutunu belirleyin"}
               </p>
             </Panel>
           </ReactFlow>
@@ -375,145 +799,42 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
             style={{ left: drawRect.left, top: drawRect.top, width: drawRect.width, height: drawRect.height }}
           />
         )}
-      </div>
 
-      <DesignSidePanels
-        elements={layersTopToBottom.map((n) => n.data.element)}
-        selectedElement={selectedElement}
-        onSelect={setSelectedElementId}
-        onDelete={handleDeleteElement}
-        onUpdateStyle={handleUpdateElementStyle}
-      />
-    </div>
-  );
-}
-
-function DesignSidePanels({
-  elements,
-  selectedElement,
-  onSelect,
-  onDelete,
-  onUpdateStyle,
-}: {
-  elements: DesignElement[];
-  selectedElement: DesignElement | null;
-  onSelect: (id: string) => void;
-  onDelete: (id: string) => void;
-  onUpdateStyle: (id: string, patch: Partial<Pick<DesignElement, "fillColor" | "fontSize" | "borderRadius">>) => void;
-}) {
-  const typeLabel: Record<DesignElementType, string> = { rectangle: "Dikdörtgen", ellipse: "Elips", text: "Metin" };
-
-  return (
-    <div className="flex w-64 shrink-0 flex-col border-l border-white/10 bg-[#0b0714]">
-      {/* Layers */}
-      <div className="flex-1 overflow-y-auto p-3">
-        <h3 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Katmanlar</h3>
-        {elements.length === 0 ? (
-          <p className="px-1 text-[11px] text-zinc-600">Henüz eleman yok.</p>
-        ) : (
-          <div className="space-y-0.5">
-            {elements.map((el) => (
-              <button
-                key={el.id}
-                onClick={() => onSelect(el.id)}
-                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors ${
-                  selectedElement?.id === el.id ? "bg-violet-500/20 text-violet-200" : "text-zinc-300 hover:bg-white/5"
-                }`}
-              >
-                <span className="flex items-center gap-2 truncate">
-                  <span
-                    className="h-3 w-3 shrink-0 rounded-sm border border-white/20"
-                    style={{ backgroundColor: el.type === "text" ? "transparent" : el.fillColor }}
-                  />
-                  {typeLabel[el.type]}
-                  {el.type === "text" && el.text ? `: ${el.text.slice(0, 16)}` : ""}
-                </span>
-              </button>
-            ))}
-          </div>
+        {penPoints && penPoints.length > 0 && (
+          <svg className="pointer-events-none absolute inset-0 h-full w-full">
+            <polyline
+              points={[...penPoints, ...(penCursor ? [penCursor] : [])]
+                .map((p) => {
+                  const s = screenPoint(p);
+                  return `${s.x},${s.y}`;
+                })
+                .join(" ")}
+              fill="none"
+              stroke="#8b5cf6"
+              strokeWidth={2}
+              strokeDasharray="4,4"
+            />
+            {penPoints.map((p, i) => {
+              const s = screenPoint(p);
+              return <circle key={i} cx={s.x} cy={s.y} r={4} fill="#8b5cf6" />;
+            })}
+          </svg>
         )}
       </div>
 
-      {/* Properties */}
-      {selectedElement && (
-        <div className="border-t border-white/10 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              {typeLabel[selectedElement.type]} Özellikleri
-            </h3>
-            <button
-              onClick={() => onDelete(selectedElement.id)}
-              className="text-[11px] text-zinc-500 hover:text-red-400"
-            >
-              Sil
-            </button>
-          </div>
-
-          {selectedElement.type !== "text" && (
-            <div className="mb-3">
-              <label className="mb-1 block text-[11px] text-zinc-400">Dolgu rengi</label>
-              <div className="flex flex-wrap gap-1.5">
-                {FILL_PRESETS.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => onUpdateStyle(selectedElement.id, { fillColor: color })}
-                    style={{ backgroundColor: color }}
-                    className={`h-6 w-6 rounded-md border-2 transition-transform hover:scale-110 ${
-                      selectedElement.fillColor === color ? "border-white" : "border-white/10"
-                    }`}
-                  />
-                ))}
-                <input
-                  type="color"
-                  value={selectedElement.fillColor}
-                  onChange={(e) => onUpdateStyle(selectedElement.id, { fillColor: e.target.value })}
-                  className="h-6 w-6 cursor-pointer rounded-md border-2 border-white/10 bg-transparent p-0"
-                />
-              </div>
-            </div>
-          )}
-
-          {selectedElement.type === "rectangle" && (
-            <div className="mb-3">
-              <label className="mb-1 block text-[11px] text-zinc-400">Köşe yuvarlaklığı</label>
-              <input
-                type="range"
-                min={0}
-                max={48}
-                value={selectedElement.borderRadius ?? 0}
-                onChange={(e) => onUpdateStyle(selectedElement.id, { borderRadius: Number(e.target.value) })}
-                className="w-full"
-              />
-            </div>
-          )}
-
-          {selectedElement.type === "text" && (
-            <>
-              <div className="mb-3">
-                <label className="mb-1 block text-[11px] text-zinc-400">Metin rengi</label>
-                <input
-                  type="color"
-                  value={selectedElement.fillColor}
-                  onChange={(e) => onUpdateStyle(selectedElement.id, { fillColor: e.target.value })}
-                  className="h-7 w-full cursor-pointer rounded-md border border-white/10 bg-transparent p-0"
-                />
-              </div>
-              <div className="mb-1">
-                <label className="mb-1 block text-[11px] text-zinc-400">Yazı boyutu</label>
-                <input
-                  type="number"
-                  min={8}
-                  max={96}
-                  value={selectedElement.fontSize ?? 16}
-                  onChange={(e) => onUpdateStyle(selectedElement.id, { fontSize: Number(e.target.value) || 16 })}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[12px] text-white focus:border-violet-500 focus:outline-none"
-                />
-              </div>
-              <p className="mt-2 text-[10px] text-zinc-600">Düzenlemek için kanvasta metne çift tıklayın.</p>
-            </>
-          )}
+      <div className="flex w-64 shrink-0 flex-col border-l border-white/10 bg-[#0b0714]">
+        <div className="max-h-[40%] overflow-y-auto border-b border-white/10 p-3">
+          <h3 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Katmanlar</h3>
+          <DesignLayersPanel elements={allElements} selectedIds={selectedIds} onSelect={handleLayerSelect} />
         </div>
-      )}
+        <DesignPropertiesPanel
+          selectedElement={selectedElement}
+          parentElement={parentElement}
+          allElements={allElements}
+          onUpdate={handleUpdateElement}
+          onDelete={handleDeleteElement}
+        />
+      </div>
     </div>
   );
 }
