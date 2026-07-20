@@ -235,7 +235,7 @@ export function DesignPropertiesPanel({ selectedElement, parentElement, allEleme
         </AccordionSection>
       )}
 
-      <AccordionSection title="Görünüm">
+      <AccordionSection title="Görünüm" defaultOpen>
         <div>
           <label className="mb-1 flex items-center justify-between text-[11px] text-zinc-400">
             <span>Opaklık</span>
@@ -271,7 +271,7 @@ export function DesignPropertiesPanel({ selectedElement, parentElement, allEleme
       </AccordionSection>
 
       {hasFill && (
-        <AccordionSection title="Dolgu">
+        <AccordionSection title="Dolgu" defaultOpen>
           <ColorField label="Renk" value={el.fillColor} onChange={(v) => patch({ fillColor: v })} />
         </AccordionSection>
       )}
