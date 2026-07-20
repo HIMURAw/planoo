@@ -30,6 +30,8 @@ interface UpdateElementBody {
   paddingLeft?: number;
   layoutAlign?: AutoLayoutAlign;
   order?: number;
+  hidden?: boolean;
+  locked?: boolean;
 }
 
 async function getOwnedElement(id: string, userId: string) {
@@ -101,6 +103,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       ...(body.paddingLeft !== undefined && { paddingLeft: body.paddingLeft }),
       ...(body.layoutAlign !== undefined && { layoutAlign: body.layoutAlign }),
       ...(body.order !== undefined && { order: body.order }),
+      ...(body.hidden !== undefined && { hidden: body.hidden }),
+      ...(body.locked !== undefined && { locked: body.locked }),
     },
   });
 

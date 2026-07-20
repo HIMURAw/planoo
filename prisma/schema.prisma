@@ -341,7 +341,16 @@ model DesignElement {
   // Draw/creation order, scoped to siblings sharing the same parentId (not
   // global) — used both as z-index stack order and, for auto-layout
   // frames, as the actual arrangement order along the main axis.
-  order     Int      @default(0)
+  order  Int     @default(0)
+  // Hidden elements are skipped entirely by canvas rendering/hit-testing
+  // but stay listed (dimmed) in the layers panel, same as Figma's eye
+  // toggle — they aren't a soft-delete, just an on/off switch.
+  hidden Boolean @default(false)
+  // Locked elements can't be dragged/resized/deleted from the canvas, but
+  // are still selectable from the layers panel to view/edit properties or
+  // unlock them — matches Figma's lock semantics.
+  locked Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

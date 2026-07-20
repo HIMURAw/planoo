@@ -92,7 +92,13 @@ function elementToNode(element: DesignElement, parent: DesignElement | undefined
     data: { element },
     style: { width: element.width, height: element.height },
     ...(element.parentId ? { parentId: element.parentId, extent: "parent" as const } : {}),
-    draggable: !isAutoLayoutChild,
+    draggable: !isAutoLayoutChild && !element.locked,
+    // Deliberately NOT restricting `selectable` for locked elements: React
+    // Flow treats that flag as "can never be selected, full stop" — it also
+    // suppresses selection set directly via controlled state (i.e. from the
+    // layers panel), not just canvas clicks. Locked elements must stay
+    // selectable from the layers panel (to view properties or unlock them);
+    // `draggable: false` above already covers "can't move/resize it".
   };
 }
 
@@ -632,6 +638,24 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
     );
   }
 
+  const handleToggleHidden = useCallback(
+    (id: string) => {
+      const el = nodes.find((n) => n.id === id)?.data.element;
+      if (!el) return;
+      handleUpdateElement(id, { hidden: !el.hidden });
+    },
+    [nodes, handleUpdateElement],
+  );
+
+  const handleToggleLocked = useCallback(
+    (id: string) => {
+      const el = nodes.find((n) => n.id === id)?.data.element;
+      if (!el) return;
+      handleUpdateElement(id, { locked: !el.locked });
+    },
+    [nodes, handleUpdateElement],
+  );
+
   // --- Group / Ungroup ---
   const handleGroupSelected = useCallback(async () => {
     const selected = nodes.filter((n) => n.selected);
@@ -952,6 +976,8 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
             selectedIds={selectedIds}
             onSelect={handleLayerSelect}
             onReorder={handleReorderElement}
+            onToggleHidden={handleToggleHidden}
+            onToggleLocked={handleToggleLocked}
           />
         </div>
         <DesignPropertiesPanel

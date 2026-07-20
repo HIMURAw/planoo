@@ -50,6 +50,8 @@ export interface DesignElement {
   paddingBottom: number;
   paddingLeft: number;
   layoutAlign: AutoLayoutAlign;
+  hidden: boolean;
+  locked: boolean;
 }
 
 export interface DesignElementNodeData extends Record<string, unknown> {
@@ -107,7 +109,16 @@ export function DesignElementNode({ data, selected }: NodeProps<DesignElementNod
   }
 
   const isTextType = element.type === "text";
-  const canResize = element.type !== "path";
+  const canResize = element.type !== "path" && !element.locked;
+  const canDelete = !element.locked;
+
+  // Hidden elements stay in the tree (still selectable/editable via the
+  // layers panel, e.g. to unhide them) but render nothing on the canvas —
+  // no shape, no resize handles, no delete button, matching Figma's eye
+  // toggle rather than a soft-delete.
+  if (element.hidden) {
+    return <div className="h-full w-full" />;
+  }
 
   const shapeStyle: React.CSSProperties = {
     width: "100%",
@@ -130,7 +141,7 @@ export function DesignElementNode({ data, selected }: NodeProps<DesignElementNod
         }
       />
 
-      {selected && (
+      {selected && canDelete && (
         <button
           type="button"
           onClick={() => onDeleteElement(element.id)}
@@ -138,6 +149,12 @@ export function DesignElementNode({ data, selected }: NodeProps<DesignElementNod
         >
           ✕
         </button>
+      )}
+
+      {selected && element.locked && (
+        <span className="pointer-events-none absolute -right-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-white/20 bg-[#1a1030] text-[10px] text-zinc-400">
+          🔒
+        </span>
       )}
 
       {renderShape()}
@@ -167,6 +184,7 @@ export function DesignElementNode({ data, selected }: NodeProps<DesignElementNod
       return (
         <div
           onDoubleClick={() => {
+            if (element.locked) return;
             setDraft(element.text ?? "");
             setIsEditingText(true);
           }}
