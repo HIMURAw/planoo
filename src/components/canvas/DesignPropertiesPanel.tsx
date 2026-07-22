@@ -54,6 +54,19 @@ function AccordionSection({
 
 function NumberField({ label, value, onCommit, min }: { label: string; value: number; onCommit: (v: number) => void; min?: number }) {
   const [draft, setDraft] = useState(String(Math.round(value * 100) / 100));
+  // Without this, switching the selected element reuses this same
+  // component instance (same slot in the tree) and keeps showing the
+  // PREVIOUS element's value — useState's initializer only runs once on
+  // mount, not whenever `value` changes out from under it. This is React's
+  // documented "adjust state during render" pattern (not an effect,
+  // deliberately) for exactly this case: setState called conditionally in
+  // the render body is safe and bails out into an immediate re-render
+  // before paint, with no extra effect-driven render pass.
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setDraft(String(Math.round(value * 100) / 100));
+  }
   return (
     <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
       <span className="w-5 shrink-0">{label}</span>

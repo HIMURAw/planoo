@@ -89,9 +89,15 @@ function elementToNode(element: DesignElement, parent: DesignElement | undefined
     id: element.id,
     type: "designElement",
     position: { x: element.posX, y: element.posY },
-    data: { element },
+    data: { element, isAutoLayoutChild },
     style: { width: element.width, height: element.height },
-    ...(element.parentId ? { parentId: element.parentId, extent: "parent" as const } : {}),
+    // Deliberately NOT `extent: "parent"`: that would clamp a child's drag
+    // to stay within its own frame's visual bounds, making it physically
+    // impossible to drag it far enough to un-nest — handleNodeDragStop's
+    // own drop-position hit-test already decides the correct new parent
+    // (or none) once the drag ends, so React Flow doesn't need to enforce
+    // any bound during the drag itself.
+    ...(element.parentId ? { parentId: element.parentId } : {}),
     draggable: !isAutoLayoutChild && !element.locked,
     // Deliberately NOT restricting `selectable` for locked elements: React
     // Flow treats that flag as "can never be selected, full stop" — it also
@@ -140,6 +146,45 @@ function isSelfOrDescendant(candidateId: string, targetId: string, elements: Des
     current = byId.get(current.parentId);
   }
   return false;
+}
+
+function getDepth(id: string, elements: DesignElement[]): number {
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  let depth = 0;
+  let current = byId.get(id);
+  while (current?.parentId) {
+    depth++;
+    current = byId.get(current.parentId);
+  }
+  return depth;
+}
+
+// Which Frame (if any) a point should nest into when a shape is dropped or
+// drawn there — the same "drag/draw onto a frame to become its child"
+// mechanic every real design tool uses, not just the layers panel. Picks
+// the most SPECIFIC match: among frames whose bounds contain the point,
+// the most deeply nested one, tie-broken by smallest area (an inner frame
+// wins over an outer one it happens to sit inside of).
+function findDropFrame(
+  excludeId: string,
+  absPoint: { x: number; y: number },
+  elements: DesignElement[],
+): string | null {
+  let best: { id: string; depth: number; area: number } | null = null;
+  for (const el of elements) {
+    if (el.type !== "frame" || el.id === excludeId) continue;
+    if (isSelfOrDescendant(excludeId, el.id, elements)) continue;
+    const abs = getAbsolutePosition(el.id, elements);
+    if (absPoint.x < abs.x || absPoint.x > abs.x + el.width || absPoint.y < abs.y || absPoint.y > abs.y + el.height) {
+      continue;
+    }
+    const depth = getDepth(el.id, elements);
+    const area = el.width * el.height;
+    if (!best || depth > best.depth || (depth === best.depth && area < best.area)) {
+      best = { id: el.id, depth, area };
+    }
+  }
+  return best?.id ?? null;
 }
 
 function collectDescendantIds(id: string, allNodes: DesignElementNodeType[]): Set<string> {
@@ -195,7 +240,11 @@ function computeAutoLayoutNodeUpdates(
     const pos = posMap.get(n.id);
     if (!pos || (n.position.x === pos.posX && n.position.y === pos.posY)) return n;
     changed.push({ id: n.id, posX: pos.posX, posY: pos.posY });
-    return { ...n, position: { x: pos.posX, y: pos.posY }, data: { element: { ...n.data.element, posX: pos.posX, posY: pos.posY } } };
+    return {
+      ...n,
+      position: { x: pos.posX, y: pos.posY },
+      data: { ...n.data, element: { ...n.data.element, posX: pos.posX, posY: pos.posY } },
+    };
   });
   return { nodes: nextNodes, changed };
 }
@@ -262,14 +311,91 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
     setNodes((prev) => applyNodeChanges(changes, prev) as DesignElementNodeType[]);
   }, []);
 
+  // Highlights the frame a currently-dragged node would drop into, live —
+  // same idea as every design tool's "drop to nest" feedback, so the
+  // reparenting handleNodeDragStop performs below doesn't feel random.
+  const [dropHoverFrameId, setDropHoverFrameId] = useState<string | null>(null);
+
+  const handleNodeDrag = useCallback(
+    (_event: unknown, node: Node) => {
+      const elements = nodes.map((n) => n.data.element);
+      const el = elements.find((e) => e.id === node.id);
+      if (!el) return;
+      // node.position is live during the drag but still relative to
+      // whatever parent el had BEFORE this drag (reparenting only happens
+      // at drag end) — so resolve absolute position via that still-current
+      // parent, not el's own (stale, pre-drag) posX/posY.
+      const parentAbs = el.parentId ? getAbsolutePosition(el.parentId, elements) : { x: 0, y: 0 };
+      const absX = parentAbs.x + node.position.x;
+      const absY = parentAbs.y + node.position.y;
+      const center = { x: absX + el.width / 2, y: absY + el.height / 2 };
+      setDropHoverFrameId(findDropFrame(el.id, center, elements));
+    },
+    [nodes],
+  );
+
   const handleNodeDragStop = useCallback(
     (_event: unknown, node: Node, draggedNodes: Node[]) => {
+      setDropHoverFrameId(null);
       const toPersist = draggedNodes.length > 0 ? draggedNodes : [node];
-      Promise.all(toPersist.map((n) => patchElement(n.id, { posX: n.position.x, posY: n.position.y }))).then(() =>
-        onDesignChanged(),
-      );
+      const current = nodes;
+
+      // Sync data.element.posX/posY to the live post-drag node.position
+      // first — otherwise the absolute-position math below (and the
+      // properties panel, until the next remount) would read stale
+      // pre-drag values for whatever just moved.
+      let elements = current.map((e) => {
+        const dragged = toPersist.find((n) => n.id === e.id);
+        return dragged ? { ...e.data.element, posX: dragged.position.x, posY: dragged.position.y } : e.data.element;
+      });
+
+      const reparentPatches: { id: string; parentId: string | null; posX: number; posY: number }[] = [];
+      const plainPatches: { id: string; posX: number; posY: number }[] = [];
+      const oldParentIds = new Set<string>();
+
+      for (const draggedNode of toPersist) {
+        const el = elements.find((e) => e.id === draggedNode.id);
+        if (!el) continue;
+        const oldParentId = el.parentId ?? null;
+        if (oldParentId) oldParentIds.add(oldParentId);
+
+        const absPos = getAbsolutePosition(el.id, elements);
+        const center = { x: absPos.x + el.width / 2, y: absPos.y + el.height / 2 };
+        const dropFrameId = findDropFrame(el.id, center, elements);
+
+        if (dropFrameId !== oldParentId) {
+          const newParentAbs = dropFrameId ? getAbsolutePosition(dropFrameId, elements) : { x: 0, y: 0 };
+          const newPosX = absPos.x - newParentAbs.x;
+          const newPosY = absPos.y - newParentAbs.y;
+          reparentPatches.push({ id: el.id, parentId: dropFrameId, posX: newPosX, posY: newPosY });
+          elements = elements.map((e) => (e.id === el.id ? { ...e, parentId: dropFrameId, posX: newPosX, posY: newPosY } : e));
+        } else {
+          plainPatches.push({ id: el.id, posX: el.posX, posY: el.posY });
+        }
+      }
+
+      let next = buildNodesFromElements(elements);
+
+      const affectedFrameIds = new Set<string>(oldParentIds);
+      for (const p of reparentPatches) if (p.parentId) affectedFrameIds.add(p.parentId);
+      let changedChildren: { id: string; posX: number; posY: number }[] = [];
+      for (const frameId of affectedFrameIds) {
+        const frameEl = next.find((n) => n.id === frameId)?.data.element;
+        if (frameEl?.type === "frame" && frameEl.layoutMode !== "none") {
+          const result = computeAutoLayoutNodeUpdates(frameId, next);
+          next = result.nodes;
+          changedChildren = [...changedChildren, ...result.changed];
+        }
+      }
+
+      setNodes(next);
+      Promise.all([
+        ...plainPatches.map((p) => patchElement(p.id, { posX: p.posX, posY: p.posY })),
+        ...reparentPatches.map((p) => patchElement(p.id, { parentId: p.parentId, posX: p.posX, posY: p.posY })),
+        ...changedChildren.map((c) => patchElement(c.id, { posX: c.posX, posY: c.posY })),
+      ]).then(() => onDesignChanged());
     },
-    [onDesignChanged],
+    [nodes, onDesignChanged],
   );
 
   const handleResizeEnd = useCallback(
@@ -284,7 +410,7 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
               ...n,
               position: { x: rect.x, y: rect.y },
               style: { width: rect.width, height: rect.height },
-              data: { element: { ...n.data.element, posX: rect.x, posY: rect.y, width: rect.width, height: rect.height } },
+              data: { ...n.data, element: { ...n.data.element, posX: rect.x, posY: rect.y, width: rect.width, height: rect.height } },
             }
           : n,
       );
@@ -315,7 +441,7 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
 
   const handleUpdateElementText = useCallback(
     (id: string, text: string) => {
-      const next = nodes.map((n) => (n.id === id ? { ...n, data: { element: { ...n.data.element, text } } } : n));
+      const next = nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, element: { ...n.data.element, text } } } : n));
       setNodes(next);
       patchElement(id, { text }).then(() => onDesignChanged());
     },
@@ -329,22 +455,35 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
       if (!target) return;
       const updatedElement: DesignElement = { ...target.data.element, ...patch };
 
-      let next = current.map((n) =>
-        n.id === id
-          ? {
-              ...n,
-              position:
-                patch.posX !== undefined || patch.posY !== undefined
-                  ? { x: updatedElement.posX, y: updatedElement.posY }
-                  : n.position,
-              style:
-                patch.width !== undefined || patch.height !== undefined
-                  ? { width: updatedElement.width, height: updatedElement.height }
-                  : n.style,
-              data: { element: updatedElement },
-            }
-          : n,
-      );
+      // Changing a frame's layoutMode flips whether ITS CHILDREN count as
+      // "auto layout children" (draggable + isAutoLayoutChild) — those are
+      // computed once at node-build time from the parent's own snapshot,
+      // so this needs a full rebuild rather than an in-place data patch,
+      // or a child's draggable/isAutoLayoutChild would stay stale until
+      // some unrelated structural change happened to trigger one anyway.
+      let next: DesignElementNodeType[];
+      if (patch.layoutMode !== undefined) {
+        const updatedElements = current.map((n) => (n.id === id ? updatedElement : n.data.element));
+        const selectedIdsBefore = new Set(current.filter((n) => n.selected).map((n) => n.id));
+        next = buildNodesFromElements(updatedElements).map((n) => ({ ...n, selected: selectedIdsBefore.has(n.id) }));
+      } else {
+        next = current.map((n) =>
+          n.id === id
+            ? {
+                ...n,
+                position:
+                  patch.posX !== undefined || patch.posY !== undefined
+                    ? { x: updatedElement.posX, y: updatedElement.posY }
+                    : n.position,
+                style:
+                  patch.width !== undefined || patch.height !== undefined
+                    ? { width: updatedElement.width, height: updatedElement.height }
+                    : n.style,
+                data: { ...n.data, element: updatedElement },
+              }
+            : n,
+        );
+      }
 
       let changedChildren: { id: string; posX: number; posY: number }[] = [];
       const layoutFieldsChanged =
@@ -416,8 +555,9 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
       onUpdateElementText: handleUpdateElementText,
       onResizeEnd: handleResizeEnd,
       onDeleteElement: handleDeleteElement,
+      dropHoverFrameId,
     }),
-    [handleUpdateElementText, handleResizeEnd, handleDeleteElement],
+    [handleUpdateElementText, handleResizeEnd, handleDeleteElement, dropHoverFrameId],
   );
 
   const handleCreateElement = useCallback(
@@ -426,31 +566,75 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
       rect: { x: number; y: number; width: number; height: number },
       extra?: Record<string, unknown>,
     ) => {
+      // Drawing a shape whose center lands inside an existing Frame nests
+      // it as that frame's child immediately, same as dragging one there —
+      // matches how every real design tool treats "drew it inside a frame."
+      const elements = nodes.map((n) => n.data.element);
+      const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      const parentId = findDropFrame("__new__", center, elements);
+      const parentAbs = parentId ? getAbsolutePosition(parentId, elements) : { x: 0, y: 0 };
+      const posX = rect.x - parentAbs.x;
+      const posY = rect.y - parentAbs.y;
+
       const response = await fetch("/api/design/elements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, type, posX: rect.x, posY: rect.y, width: rect.width, height: rect.height, ...extra }),
+        body: JSON.stringify({ projectId, type, parentId, posX, posY, width: rect.width, height: rect.height, ...extra }),
       });
       const data = (await response.json()) as { element?: DesignElement };
       if (!response.ok || !data.element) return;
       const created = data.element;
-      setNodes((prev) => [...prev, elementToNode(created, undefined)].map((n) => ({ ...n, selected: n.id === created.id })));
-      onDesignChanged();
+
+      let next = buildNodesFromElements([...elements, created]);
+      let changedChildren: { id: string; posX: number; posY: number }[] = [];
+      if (created.parentId) {
+        const parentEl = next.find((n) => n.id === created.parentId)?.data.element;
+        if (parentEl?.type === "frame" && parentEl.layoutMode !== "none") {
+          const result = computeAutoLayoutNodeUpdates(created.parentId, next);
+          next = result.nodes;
+          changedChildren = result.changed;
+        }
+      }
+      next = next.map((n) => ({ ...n, selected: n.id === created.id }));
+
+      setNodes(next);
+      if (changedChildren.length > 0) {
+        Promise.all(changedChildren.map((c) => patchElement(c.id, { posX: c.posX, posY: c.posY }))).then(() => onDesignChanged());
+      } else {
+        onDesignChanged();
+      }
     },
-    [projectId, onDesignChanged],
+    [projectId, onDesignChanged, nodes],
   );
 
   // --- Draw-to-size tools: rectangle / ellipse / text / frame / line ---
-  function handleWrapperMouseDown(e: React.MouseEvent) {
-    if (!DRAW_GROUP.includes(activeTool)) return;
-    const bounds = canvasWrapperRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    const start = { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
-    drawStartScreenRef.current = start;
-    drawCurrentScreenRef.current = start;
-    setDrawTool(activeTool);
-    setDrawRect({ left: start.x, top: start.y, width: 0, height: 0 });
-  }
+  // A native, CAPTURE-phase listener rather than a React onMouseDown prop:
+  // React Flow attaches its own pointerdown handling directly to each node
+  // (for its native drag/select behavior) and that runs before a bubble-
+  // phase handler on this wrapper would ever see the event — so starting a
+  // draw gesture on top of an EXISTING node (e.g. drawing a new shape
+  // inside a frame's visible bounds) was getting swallowed as "drag that
+  // node" instead, and no new shape was ever created. A capture-phase
+  // listener on the wrapper (an ancestor of every node) fires first, and
+  // calling stopPropagation() here prevents the event from ever reaching
+  // React Flow's own node handlers at all.
+  useEffect(() => {
+    const el = canvasWrapperRef.current;
+    if (!el || !DRAW_GROUP.includes(activeTool)) return;
+
+    function handleCaptureMouseDown(e: MouseEvent) {
+      e.stopPropagation();
+      const bounds = el!.getBoundingClientRect();
+      const start = { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
+      drawStartScreenRef.current = start;
+      drawCurrentScreenRef.current = start;
+      setDrawTool(activeTool);
+      setDrawRect({ left: start.x, top: start.y, width: 0, height: 0 });
+    }
+
+    el.addEventListener("mousedown", handleCaptureMouseDown, { capture: true });
+    return () => el.removeEventListener("mousedown", handleCaptureMouseDown, { capture: true });
+  }, [activeTool]);
 
   useEffect(() => {
     if (!drawTool) return;
@@ -857,7 +1041,6 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
       <div
         className={`relative flex-1 ${activeTool !== "select" ? "cursor-crosshair" : ""}`}
         ref={canvasWrapperRef}
-        onMouseDown={handleWrapperMouseDown}
         onMouseMove={handleWrapperMouseMove}
         onDoubleClick={handleWrapperDoubleClick}
       >
@@ -866,11 +1049,18 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
             nodes={nodes}
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
+            onNodeDrag={handleNodeDrag}
             onNodeDragStop={handleNodeDragStop}
             onNodesDelete={handleNodesDelete}
             onPaneClick={handlePaneClick}
             onMoveEnd={handleMoveEnd}
             panOnDrag={activeTool === "select"}
+            // While a draw tool is active, existing nodes must NOT claim
+            // mousedowns for their own drag — otherwise starting a new
+            // shape on top of an existing one (e.g. drawing inside a
+            // frame's visible bounds) gets hijacked as "drag that node"
+            // instead of reaching the custom pane draw-gesture below.
+            nodesDraggable={activeTool === "select"}
             multiSelectionKeyCode={["Shift", "Meta", "Control"]}
             deleteKeyCode={["Backspace", "Delete"]}
             colorMode="dark"

@@ -56,6 +56,14 @@ export interface DesignElement {
 
 export interface DesignElementNodeData extends Record<string, unknown> {
   element: DesignElement;
+  // True when this element's position is fully managed by its parent's
+  // auto layout (not draggable). Needed here (not just as a node-level
+  // `draggable: false`) so the node itself can stop a mousedown from
+  // falling through to whatever's rendered underneath — React Flow marking
+  // a node non-draggable doesn't stop it from being hit-tested, so without
+  // this, "trying to drag a non-draggable child" was actually dragging the
+  // parent FRAME behind it instead of doing nothing.
+  isAutoLayoutChild: boolean;
 }
 
 export type DesignElementNodeType = Node<DesignElementNodeData, "designElement">;
@@ -64,6 +72,9 @@ export interface DesignCanvasHandlers {
   onUpdateElementText: (id: string, text: string) => void;
   onResizeEnd: (id: string, rect: { x: number; y: number; width: number; height: number }) => void;
   onDeleteElement: (id: string) => void;
+  // The frame a currently-dragged element would nest into if dropped now —
+  // lets that one frame render a "you're about to drop here" highlight.
+  dropHoverFrameId: string | null;
 }
 
 // Same declaration-order reasoning as SchemaTableNode/SchemaNoteNode's own
@@ -98,8 +109,9 @@ function shadowCss(effects: ShadowEffect[] | null, asFilter: boolean): string | 
 }
 
 export function DesignElementNode({ data, selected }: NodeProps<DesignElementNodeType>) {
-  const { element } = data;
-  const { onUpdateElementText, onResizeEnd, onDeleteElement } = useDesignCanvasHandlers();
+  const { element, isAutoLayoutChild } = data;
+  const { onUpdateElementText, onResizeEnd, onDeleteElement, dropHoverFrameId } = useDesignCanvasHandlers();
+  const isDropHoverTarget = element.type === "frame" && dropHoverFrameId === element.id;
   const [isEditingText, setIsEditingText] = useState(false);
   const [draft, setDraft] = useState(element.text ?? "");
 
@@ -129,7 +141,12 @@ export function DesignElementNode({ data, selected }: NodeProps<DesignElementNod
   };
 
   return (
-    <div className="group relative h-full w-full">
+    <div
+      className="group relative h-full w-full"
+      onMouseDownCapture={(e) => {
+        if (isAutoLayoutChild) e.stopPropagation();
+      }}
+    >
       <NodeResizer
         isVisible={selected && canResize}
         minWidth={MIN_SIZE}
@@ -155,6 +172,10 @@ export function DesignElementNode({ data, selected }: NodeProps<DesignElementNod
         <span className="pointer-events-none absolute -right-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-white/20 bg-[#1a1030] text-[10px] text-zinc-400">
           🔒
         </span>
+      )}
+
+      {isDropHoverTarget && (
+        <div className="pointer-events-none absolute -inset-1 z-20 rounded-md border-2 border-dashed border-emerald-400 bg-emerald-400/10" />
       )}
 
       {renderShape()}
