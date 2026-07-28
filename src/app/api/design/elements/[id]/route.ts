@@ -6,6 +6,7 @@ import type { AutoLayoutDirection, AutoLayoutAlign, StrokeStyle } from "@prisma/
 
 interface UpdateElementBody {
   parentId?: string | null;
+  name?: string | null;
   posX?: number;
   posY?: number;
   width?: number;
@@ -79,6 +80,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     where: { id },
     data: {
       ...(body.parentId !== undefined && { parentId: body.parentId }),
+      ...(body.name !== undefined && { name: body.name?.trim() || null }),
       ...(body.posX !== undefined && { posX: body.posX }),
       ...(body.posY !== undefined && { posY: body.posY }),
       ...(body.width !== undefined && { width: body.width }),

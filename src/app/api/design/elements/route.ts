@@ -9,6 +9,7 @@ interface CreateElementBody {
   projectId?: string;
   type?: string;
   parentId?: string | null;
+  name?: string | null;
   posX?: number;
   posY?: number;
   width?: number;
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
       projectId,
       type: type as DesignElementType,
       parentId: body?.parentId ?? null,
+      ...(body?.name !== undefined && { name: body.name?.trim() || null }),
       posX: body?.posX ?? 0,
       posY: body?.posY ?? 0,
       width: body?.width ?? 120,

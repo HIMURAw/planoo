@@ -26,6 +26,16 @@ import { DesignLayersPanel } from "./DesignLayersPanel";
 import { DesignPropertiesPanel } from "./DesignPropertiesPanel";
 import { computeAutoLayoutPositions } from "@/lib/auto-layout";
 import { compressImageToDataUrl, getImageDimensions } from "@/lib/design-image";
+import {
+  CursorIcon,
+  RectangleToolIcon,
+  EllipseToolIcon,
+  FrameToolIcon,
+  LineToolIcon,
+  PenToolIcon,
+  ImageToolIcon,
+  GroupIcon,
+} from "./DesignIcons";
 
 interface DesignCanvasProps {
   projectId: string;
@@ -45,16 +55,34 @@ const DEFAULT_SIZE: Record<"rectangle" | "ellipse" | "text" | "frame", { width: 
   frame: { width: 320, height: 200 },
 };
 
-const TOOL_BUTTONS: { tool: Tool; label: string; icon: string }[] = [
-  { tool: "select", label: "Seç", icon: "↖" },
-  { tool: "rectangle", label: "Dikdörtgen", icon: "▭" },
-  { tool: "ellipse", label: "Elips", icon: "◯" },
-  { tool: "text", label: "Metin", icon: "T" },
-  { tool: "frame", label: "Çerçeve", icon: "⬚" },
-  { tool: "line", label: "Çizgi", icon: "╱" },
-  { tool: "pen", label: "Kalem", icon: "✎" },
-  { tool: "image", label: "Görsel", icon: "🖼" },
+interface ToolDef {
+  tool: Tool;
+  label: string;
+  shortcut: string;
+  Icon: (props: { className?: string }) => React.ReactElement;
+}
+
+// Grouped into sections (select / shapes+frame / line+pen / image) with a
+// thin divider between groups, mirroring Figma's own toolbar structure.
+// Shortcuts match Figma's own where one exists (V/R/O/T/F/L/P).
+const TOOL_GROUPS: ToolDef[][] = [
+  [{ tool: "select", label: "Seç", shortcut: "V", Icon: CursorIcon }],
+  [
+    { tool: "rectangle", label: "Dikdörtgen", shortcut: "R", Icon: RectangleToolIcon },
+    { tool: "ellipse", label: "Elips", shortcut: "O", Icon: EllipseToolIcon },
+    { tool: "text", label: "Metin", shortcut: "T", Icon: (p) => <span className={p.className}>T</span> },
+    { tool: "frame", label: "Çerçeve", shortcut: "F", Icon: FrameToolIcon },
+  ],
+  [
+    { tool: "line", label: "Çizgi", shortcut: "L", Icon: LineToolIcon },
+    { tool: "pen", label: "Kalem", shortcut: "P", Icon: PenToolIcon },
+  ],
+  [{ tool: "image", label: "Görsel", shortcut: "I", Icon: ImageToolIcon }],
 ];
+
+const SHORTCUT_TO_TOOL: Record<string, Tool> = Object.fromEntries(
+  TOOL_GROUPS.flat().map((t) => [t.shortcut.toLowerCase(), t.tool]),
+);
 
 function patchElement(id: string, patch: Record<string, unknown>) {
   return fetch(`/api/design/elements/${id}`, {
@@ -927,6 +955,131 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
     onDesignChanged();
   }, [nodes, onDesignChanged, handleDeleteElement]);
 
+  // --- Duplicate (Ctrl/Cmd+D): clones the full subtree of each selected
+  // element (a duplicated Frame brings its children along), offsetting only
+  // the ROOT of each duplicated selection so nested copies stay lined up
+  // with their new cloned parent instead of drifting.
+  const duplicateElementIds = useCallback(async (rootIdsInput: string[]) => {
+    if (rootIdsInput.length === 0) return;
+    const allElements = nodes.map((n) => n.data.element);
+
+    const idsToClone = new Set<string>();
+    for (const id of rootIdsInput) {
+      for (const descId of collectDescendantIds(id, nodes)) idsToClone.add(descId);
+    }
+    const rootIds = new Set(rootIdsInput);
+    const ordered = topoSortElements(allElements.filter((e) => idsToClone.has(e.id)));
+
+    const OFFSET = 24;
+    const idMap = new Map<string, string>();
+    const created: DesignElement[] = [];
+
+    for (const el of ordered) {
+      const isRoot = rootIds.has(el.id);
+      const newParentId = isRoot ? el.parentId : (el.parentId ? (idMap.get(el.parentId) ?? null) : null);
+      const response = await fetch("/api/design/elements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          type: el.type,
+          parentId: newParentId,
+          name: el.name,
+          posX: isRoot ? el.posX + OFFSET : el.posX,
+          posY: isRoot ? el.posY + OFFSET : el.posY,
+          width: el.width,
+          height: el.height,
+          rotation: el.rotation,
+          opacity: el.opacity,
+          fillColor: el.fillColor,
+          text: el.text,
+          fontSize: el.fontSize,
+          borderRadius: el.borderRadius,
+          strokeColor: el.strokeColor,
+          strokeWidth: el.strokeWidth,
+          strokeStyle: el.strokeStyle,
+          effects: el.effects,
+          pathData: el.pathData,
+          imageData: el.imageData,
+          layoutMode: el.layoutMode,
+          layoutGap: el.layoutGap,
+          paddingTop: el.paddingTop,
+          paddingRight: el.paddingRight,
+          paddingBottom: el.paddingBottom,
+          paddingLeft: el.paddingLeft,
+          layoutAlign: el.layoutAlign,
+        }),
+      });
+      const data = (await response.json()) as { element?: DesignElement };
+      if (response.ok && data.element) {
+        idMap.set(el.id, data.element.id);
+        created.push(data.element);
+      }
+    }
+    if (created.length === 0) return;
+
+    const rootNewIds = new Set(Array.from(rootIds).map((id) => idMap.get(id)).filter((v): v is string => !!v));
+    const nextElements = [...allElements, ...created];
+    const rebuilt = buildNodesFromElements(nextElements).map((n) => ({ ...n, selected: rootNewIds.has(n.id) }));
+    setNodes(rebuilt);
+    onDesignChanged();
+  }, [nodes, projectId, onDesignChanged]);
+
+  const handleDuplicateSelected = useCallback(() => {
+    const selectedIds = nodes.filter((n) => n.selected).map((n) => n.id);
+    duplicateElementIds(selectedIds);
+  }, [nodes, duplicateElementIds]);
+
+  const handleDuplicateElement = useCallback((id: string) => duplicateElementIds([id]), [duplicateElementIds]);
+
+  // --- Global keyboard shortcuts: tool switching (V/R/O/T/F/L/P/I, matching
+  // Figma's own where one exists), Ctrl/Cmd+D duplicate, Ctrl/Cmd+G group,
+  // Ctrl/Cmd+Shift+G ungroup, Escape to drop back to the select tool and
+  // clear selection. Ignored while typing in any input/textarea (renaming a
+  // layer, editing a property field, editing text on canvas) or while the
+  // pen tool is mid-path (that has its own dedicated Enter/Escape handling).
+  useEffect(() => {
+    function isTypingTarget(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) return false;
+      return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+    }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (isTypingTarget(e.target) || penPoints) return;
+      const meta = e.metaKey || e.ctrlKey;
+
+      if (meta && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        handleDuplicateSelected();
+        return;
+      }
+      if (meta && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        if (e.shiftKey) handleUngroupSelected();
+        else handleGroupSelected();
+        return;
+      }
+      if (e.key === "Escape") {
+        setActiveTool("select");
+        setNodes((prev) => prev.map((n) => (n.selected ? { ...n, selected: false } : n)));
+        return;
+      }
+      if (meta) return; // avoid hijacking other browser/OS shortcuts sharing a letter
+
+      const tool = SHORTCUT_TO_TOOL[e.key.toLowerCase()];
+      if (!tool) return;
+      if (tool === "image") {
+        setActiveTool("image");
+        fileInputRef.current?.click();
+      } else {
+        setActiveTool(tool);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [penPoints, handleDuplicateSelected, handleGroupSelected, handleUngroupSelected]);
+
   // --- Layers-panel drag-and-drop: reorder within a level, nest inside a
   // Frame, or un-nest back out — mirrors Figma's own layers-panel model.
   // `position` "before"/"after" reorders as a sibling of `targetId` (using
@@ -1071,21 +1224,26 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
             <Controls style={{ bottom: 16 }} />
 
             <Panel position="top-left">
-              <div className="glass-panel flex flex-wrap items-center gap-1 rounded-xl p-1.5">
-                {TOOL_BUTTONS.map(({ tool, label, icon }) => (
-                  <button
-                    key={tool}
-                    type="button"
-                    title={label}
-                    onClick={() => (tool === "image" ? handleSelectImageTool() : setActiveTool(tool))}
-                    className={`flex h-9 w-9 items-center justify-center rounded-lg text-base font-medium transition-colors ${
-                      activeTool === tool
-                        ? "border border-violet-400/60 bg-violet-500/30 text-violet-200"
-                        : "border border-transparent text-zinc-300 hover:bg-white/10"
-                    }`}
-                  >
-                    {icon}
-                  </button>
+              <div className="glass-panel flex flex-wrap items-center gap-0.5 rounded-xl p-1.5">
+                {TOOL_GROUPS.map((group, groupIndex) => (
+                  <div key={groupIndex} className="flex items-center gap-0.5">
+                    {groupIndex > 0 && <span className="mx-1 h-6 w-px bg-white/10" />}
+                    {group.map(({ tool, label, shortcut, Icon }) => (
+                      <button
+                        key={tool}
+                        type="button"
+                        title={`${label} (${shortcut})`}
+                        onClick={() => (tool === "image" ? handleSelectImageTool() : setActiveTool(tool))}
+                        className={`flex h-9 w-9 items-center justify-center rounded-lg text-base font-medium transition-colors ${
+                          activeTool === tool
+                            ? "border border-violet-400/60 bg-violet-500/30 text-violet-200"
+                            : "border border-transparent text-zinc-300 hover:bg-white/10"
+                        }`}
+                      >
+                        <Icon className="h-4.5 w-4.5" />
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
             </Panel>
@@ -1096,14 +1254,17 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
                   {canGroup && (
                     <button
                       onClick={handleGroupSelected}
-                      className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-white/10"
+                      title="Grupla (Ctrl/Cmd+G)"
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-white/10"
                     >
+                      <GroupIcon className="h-3.5 w-3.5" />
                       Grupla
                     </button>
                   )}
                   {canUngroup && (
                     <button
                       onClick={handleUngroupSelected}
+                      title="Grubu Çöz (Ctrl/Cmd+Shift+G)"
                       className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-zinc-200 hover:bg-white/10"
                     >
                       Grubu Çöz
@@ -1168,6 +1329,9 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
             onReorder={handleReorderElement}
             onToggleHidden={handleToggleHidden}
             onToggleLocked={handleToggleLocked}
+            onRename={(id, name) => handleUpdateElement(id, { name })}
+            onDuplicate={handleDuplicateElement}
+            onDelete={handleDeleteElement}
           />
         </div>
         <DesignPropertiesPanel
@@ -1176,6 +1340,7 @@ function DesignCanvasInner({ projectId, initialElements, onDesignChanged }: Desi
           allElements={allElements}
           onUpdate={handleUpdateElement}
           onDelete={handleDeleteElement}
+          onDuplicate={handleDuplicateElement}
         />
       </div>
     </div>

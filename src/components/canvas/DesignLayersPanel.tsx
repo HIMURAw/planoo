@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { DesignElement, DesignElementType } from "./DesignElementNode";
+import { EyeIcon, EyeOffIcon, LockIcon, UnlockIcon, SearchIcon, DotsVerticalIcon, TrashIcon, DuplicateIcon } from "./DesignIcons";
 
 type DropPosition = "before" | "after" | "inside";
 interface DropTarget {
@@ -16,6 +17,9 @@ interface DesignLayersPanelProps {
   onReorder: (draggedId: string, targetId: string, position: DropPosition) => void;
   onToggleHidden: (id: string) => void;
   onToggleLocked: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  onDuplicate: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
 const TYPE_LABEL: Record<DesignElementType, string> = {
@@ -27,7 +31,8 @@ const TYPE_LABEL: Record<DesignElementType, string> = {
   path: "Çizgi",
 };
 
-function labelFor(el: DesignElement): string {
+export function labelFor(el: Pick<DesignElement, "type" | "text" | "name">): string {
+  if (el.name) return el.name;
   if (el.type === "text") return el.text ? `Metin: ${el.text.slice(0, 20)}` : "Metin";
   return TYPE_LABEL[el.type];
 }
@@ -96,13 +101,15 @@ function RowIconButton({
   active,
   activeTitle,
   inactiveTitle,
-  children,
+  activeIcon,
+  inactiveIcon,
 }: {
   onClick: () => void;
   active: boolean;
   activeTitle: string;
   inactiveTitle: string;
-  children: React.ReactNode;
+  activeIcon: React.ReactNode;
+  inactiveIcon: React.ReactNode;
 }) {
   return (
     <button
@@ -113,12 +120,73 @@ function RowIconButton({
         e.stopPropagation();
         onClick();
       }}
-      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] transition-opacity hover:bg-white/10 ${
+      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded transition-opacity hover:bg-white/10 ${
         active ? "opacity-100" : "opacity-0 group-hover/row:opacity-60 hover:opacity-100!"
       }`}
     >
-      {children}
+      {active ? activeIcon : inactiveIcon}
     </button>
+  );
+}
+
+interface ContextMenuState {
+  id: string;
+  x: number;
+  y: number;
+}
+
+function LayerContextMenu({
+  menu,
+  onClose,
+  onRename,
+  onDuplicate,
+  onDelete,
+}: {
+  menu: ContextMenuState;
+  onClose: () => void;
+  onRename: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} onContextMenu={(e) => e.preventDefault()} />
+      <div
+        className="glass-panel fixed z-50 w-40 overflow-hidden rounded-lg border border-white/10 py-1 text-[12px] shadow-xl"
+        style={{ left: menu.x, top: menu.y }}
+      >
+        <button
+          onClick={() => {
+            onRename();
+            onClose();
+          }}
+          className="flex w-full items-center px-3 py-1.5 text-left text-zinc-200 hover:bg-white/10"
+        >
+          Yeniden Adlandır
+        </button>
+        <button
+          onClick={() => {
+            onDuplicate();
+            onClose();
+          }}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-zinc-200 hover:bg-white/10"
+        >
+          <DuplicateIcon className="h-3.5 w-3.5" />
+          Kopyala
+        </button>
+        <div className="my-1 h-px bg-white/10" />
+        <button
+          onClick={() => {
+            onDelete();
+            onClose();
+          }}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-red-400 hover:bg-red-500/10"
+        >
+          <TrashIcon className="h-3.5 w-3.5" />
+          Sil
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -147,11 +215,16 @@ export function DesignLayersPanel({
   onReorder,
   onToggleHidden,
   onToggleLocked,
+  onRename,
+  onDuplicate,
+  onDelete,
 }: DesignLayersPanelProps) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   const gestureRef = useRef<{ id: string; startX: number; startY: number; dragging: boolean } | null>(null);
   const justFinishedDragRef = useRef(false);
@@ -168,7 +241,7 @@ export function DesignLayersPanel({
   }
 
   function handleRowMouseDown(e: React.MouseEvent, id: string) {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || renamingId === id) return;
     gestureRef.current = { id, startX: e.clientX, startY: e.clientY, dragging: false };
   }
 
@@ -178,6 +251,11 @@ export function DesignLayersPanel({
       return;
     }
     onSelect(id, e.shiftKey || e.metaKey || e.ctrlKey);
+  }
+
+  function handleRowContextMenu(id: string, x: number, y: number) {
+    if (!selectedIds.has(id)) onSelect(id, false);
+    setContextMenu({ id, x, y });
   }
 
   useEffect(() => {
@@ -241,15 +319,28 @@ export function DesignLayersPanel({
     ? elements.filter((e) => labelFor(e).toLowerCase().includes(query)).sort((a, b) => b.order - a.order)
     : [];
 
+  const rowCallbacks = {
+    onToggleCollapsed: toggleCollapsed,
+    onRowMouseDown: handleRowMouseDown,
+    onRowClick: handleRowClick,
+    onRowContextMenu: handleRowContextMenu,
+    onToggleHidden,
+    onToggleLocked,
+    onRename,
+    renamingId,
+    setRenamingId,
+  };
+
   return (
     <div>
       <div className="relative mb-1.5">
+        <SearchIcon className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Katmanlarda ara…"
-          className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1 pr-6 text-[11px] text-white placeholder:text-zinc-600 focus:border-violet-500 focus:outline-none"
+          className="w-full rounded-md border border-white/10 bg-white/5 py-1 pl-7 pr-6 text-[11px] text-white placeholder:text-zinc-600 focus:border-violet-500 focus:outline-none"
         />
         {isSearching && (
           <button
@@ -267,36 +358,7 @@ export function DesignLayersPanel({
         ) : (
           <div className="space-y-0.5">
             {searchResults.map((el) => (
-              <div key={el.id} data-layer-id={el.id} data-layer-type={el.type}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-label={labelFor(el)}
-                  onClick={(e) => onSelect(el.id, e.shiftKey || e.metaKey || e.ctrlKey)}
-                  className={`group/row flex w-full items-center gap-1.5 rounded-lg py-1.5 pl-2 pr-1 text-left text-[12px] transition-colors ${
-                    selectedIds.has(el.id) ? "bg-violet-500/20 text-violet-200" : "text-zinc-300 hover:bg-white/5"
-                  } ${el.hidden ? "opacity-50" : ""}`}
-                >
-                  <TypeSwatch element={el} />
-                  <span className="flex-1 truncate">{labelFor(el)}</span>
-                  <RowIconButton
-                    onClick={() => onToggleLocked(el.id)}
-                    active={el.locked}
-                    activeTitle="Kilidi aç"
-                    inactiveTitle="Kilitle"
-                  >
-                    {el.locked ? "🔒" : "🔓"}
-                  </RowIconButton>
-                  <RowIconButton
-                    onClick={() => onToggleHidden(el.id)}
-                    active={el.hidden}
-                    activeTitle="Göster"
-                    inactiveTitle="Gizle"
-                  >
-                    {el.hidden ? "◌" : "👁"}
-                  </RowIconButton>
-                </div>
-              </div>
+              <LayerRow key={el.id} element={el} ancestorLines={[]} elements={elements} selectedIds={selectedIds} collapsedIds={collapsedIds} dragId={null} dropTarget={null} flatSearchMode {...rowCallbacks} />
             ))}
           </div>
         )
@@ -312,14 +374,20 @@ export function DesignLayersPanel({
               collapsedIds={collapsedIds}
               dragId={dragId}
               dropTarget={dropTarget}
-              onToggleCollapsed={toggleCollapsed}
-              onRowMouseDown={handleRowMouseDown}
-              onRowClick={handleRowClick}
-              onToggleHidden={onToggleHidden}
-              onToggleLocked={onToggleLocked}
+              {...rowCallbacks}
             />
           ))}
         </div>
+      )}
+
+      {contextMenu && (
+        <LayerContextMenu
+          menu={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onRename={() => setRenamingId(contextMenu.id)}
+          onDuplicate={() => onDuplicate(contextMenu.id)}
+          onDelete={() => onDelete(contextMenu.id)}
+        />
       )}
     </div>
   );
@@ -333,11 +401,16 @@ function LayerRow({
   collapsedIds,
   dragId,
   dropTarget,
+  flatSearchMode,
   onToggleCollapsed,
   onRowMouseDown,
   onRowClick,
+  onRowContextMenu,
   onToggleHidden,
   onToggleLocked,
+  onRename,
+  renamingId,
+  setRenamingId,
 }: {
   element: DesignElement;
   // One entry per ancestor level; empty for top-level rows, which have no
@@ -348,19 +421,46 @@ function LayerRow({
   collapsedIds: Set<string>;
   dragId: string | null;
   dropTarget: DropTarget | null;
+  // Search-result rows are always flat (no children rendered, no drag) —
+  // hierarchy context isn't meaningful once the list is filtered by name.
+  flatSearchMode?: boolean;
   onToggleCollapsed: (id: string) => void;
   onRowMouseDown: (e: React.MouseEvent, id: string) => void;
   onRowClick: (e: React.MouseEvent, id: string) => void;
+  onRowContextMenu: (id: string, x: number, y: number) => void;
   onToggleHidden: (id: string) => void;
   onToggleLocked: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  renamingId: string | null;
+  setRenamingId: (id: string | null) => void;
 }) {
   const depth = ancestorLines.length;
-  const children = elements.filter((e) => e.parentId === element.id).sort((a, b) => b.order - a.order);
+  const children = flatSearchMode ? [] : elements.filter((e) => e.parentId === element.id).sort((a, b) => b.order - a.order);
   const hasChildren = children.length > 0;
   const isSelected = selectedIds.has(element.id);
   const isCollapsed = collapsedIds.has(element.id);
   const isDragging = dragId === element.id;
   const isDropTarget = dropTarget?.id === element.id;
+  const isRenaming = renamingId === element.id;
+  const [draft, setDraft] = useState(labelFor(element));
+  // Reset the draft on the false->true transition into renaming, no matter
+  // which trigger started it (double-click seeds `draft` itself before
+  // setting renamingId, but the context-menu path doesn't) — same "adjust
+  // state during render" pattern as NumberField's stale-value fix, so this
+  // never shows a leftover draft from a previous rename or a different row.
+  const [wasRenaming, setWasRenaming] = useState(false);
+  if (isRenaming && !wasRenaming) {
+    setWasRenaming(true);
+    setDraft(labelFor(element));
+  } else if (!isRenaming && wasRenaming) {
+    setWasRenaming(false);
+  }
+
+  function commitRename() {
+    setRenamingId(null);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== labelFor(element)) onRename(element.id, trimmed);
+  }
 
   return (
     <div>
@@ -377,6 +477,10 @@ function LayerRow({
           aria-label={labelFor(element)}
           onMouseDown={(e) => onRowMouseDown(e, element.id)}
           onClick={(e) => onRowClick(e, element.id)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onRowContextMenu(element.id, e.clientX, e.clientY);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") onRowClick(e as unknown as React.MouseEvent, element.id);
           }}
@@ -400,23 +504,64 @@ function LayerRow({
             {hasChildren ? (isCollapsed ? "▸" : "▾") : ""}
           </button>
           <TypeSwatch element={element} />
-          <span className="flex-1 truncate">{labelFor(element)}</span>
+          {isRenaming ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onFocus={(e) => e.target.select()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                else if (e.key === "Escape") {
+                  setDraft(labelFor(element));
+                  setRenamingId(null);
+                }
+              }}
+              className="flex-1 rounded border border-violet-400/60 bg-black/40 px-1 py-0 text-[12px] text-white focus:outline-none"
+            />
+          ) : (
+            <span
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setDraft(labelFor(element));
+                setRenamingId(element.id);
+              }}
+              className="flex-1 truncate"
+            >
+              {labelFor(element)}
+            </span>
+          )}
           <RowIconButton
             onClick={() => onToggleLocked(element.id)}
             active={element.locked}
             activeTitle="Kilidi aç"
             inactiveTitle="Kilitle"
-          >
-            {element.locked ? "🔒" : "🔓"}
-          </RowIconButton>
+            activeIcon={<LockIcon className="h-3.5 w-3.5" />}
+            inactiveIcon={<UnlockIcon className="h-3.5 w-3.5" />}
+          />
           <RowIconButton
             onClick={() => onToggleHidden(element.id)}
             active={element.hidden}
             activeTitle="Göster"
             inactiveTitle="Gizle"
+            activeIcon={<EyeOffIcon className="h-3.5 w-3.5" />}
+            inactiveIcon={<EyeIcon className="h-3.5 w-3.5" />}
+          />
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = e.currentTarget.getBoundingClientRect();
+              onRowContextMenu(element.id, rect.left, rect.bottom);
+            }}
+            title="Diğer işlemler"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-400 opacity-0 hover:bg-white/10 group-hover/row:opacity-60 hover:opacity-100!"
           >
-            {element.hidden ? "◌" : "👁"}
-          </RowIconButton>
+            <DotsVerticalIcon className="h-3.5 w-3.5" />
+          </button>
         </div>
         {isDropTarget && dropTarget?.position === "after" && (
           <div
@@ -440,8 +585,12 @@ function LayerRow({
             onToggleCollapsed={onToggleCollapsed}
             onRowMouseDown={onRowMouseDown}
             onRowClick={onRowClick}
+            onRowContextMenu={onRowContextMenu}
             onToggleHidden={onToggleHidden}
             onToggleLocked={onToggleLocked}
+            onRename={onRename}
+            renamingId={renamingId}
+            setRenamingId={setRenamingId}
           />
         ))}
     </div>

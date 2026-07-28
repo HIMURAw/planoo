@@ -286,6 +286,11 @@ model DesignElement {
   // contents in Figma.
   parentId  String?
   type      DesignElementType
+  // User-assigned layer name (Figma-style rename). Null falls back to a
+  // generic per-type label at render time (see DesignLayersPanel.tsx) —
+  // most elements never get renamed, so this stays optional rather than
+  // defaulting to a redundant copy of the type name in every row.
+  name      String?
   posX      Float             @default(0)
   posY      Float             @default(0)
   // When the parent frame has layoutMode != none, posX/posY are recomputed

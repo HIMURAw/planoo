@@ -26,6 +26,7 @@ export interface DesignElement {
   id: string;
   parentId: string | null;
   type: DesignElementType;
+  name: string | null;
   posX: number;
   posY: number;
   width: number;
@@ -92,6 +93,24 @@ function useDesignCanvasHandlers(): DesignCanvasHandlers {
 
 const MIN_SIZE = 24;
 
+// Not imported from DesignLayersPanel's own `labelFor` on purpose — that
+// module imports types FROM this file, so importing back would create a
+// circular dependency between the two. Small enough to just duplicate.
+const TYPE_LABEL_CANVAS: Record<DesignElementType, string> = {
+  rectangle: "Dikdörtgen",
+  ellipse: "Elips",
+  text: "Metin",
+  frame: "Çerçeve",
+  image: "Görsel",
+  path: "Çizgi",
+};
+
+function canvasLabelFor(el: DesignElement): string {
+  if (el.name) return el.name;
+  if (el.type === "text") return el.text ? `Metin: ${el.text.slice(0, 20)}` : "Metin";
+  return TYPE_LABEL_CANVAS[el.type];
+}
+
 function dashArrayCss(style: StrokeStyleValue): "solid" | "dashed" | "dotted" {
   return style;
 }
@@ -157,6 +176,12 @@ export function DesignElementNode({ data, selected }: NodeProps<DesignElementNod
           onResizeEnd(element.id, { x: params.x, y: params.y, width: params.width, height: params.height })
         }
       />
+
+      {selected && (
+        <span className="nodrag pointer-events-none absolute -top-6 left-0 whitespace-nowrap rounded bg-violet-500 px-1.5 py-0.5 text-[10px] font-medium text-white">
+          {canvasLabelFor(element)}
+        </span>
+      )}
 
       {selected && canDelete && (
         <button
@@ -271,7 +296,7 @@ export function DesignElementNode({ data, selected }: NodeProps<DesignElementNod
     };
     return (
       <div style={style}>
-        {element.type === "frame" && element.layoutMode !== "none" && (
+        {!selected && element.type === "frame" && element.layoutMode !== "none" && (
           <span className="pointer-events-none absolute -top-5 left-0 rounded bg-violet-500/20 px-1.5 py-0.5 text-[9px] text-violet-300">
             {element.layoutMode === "horizontal" ? "→ Auto Layout" : "↓ Auto Layout"}
           </span>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { DesignElement, AutoLayoutDirection, AutoLayoutAlign, StrokeStyleValue, ShadowEffect } from "./DesignElementNode";
 import { buildSvgMarkup, rasterizeSvg, downloadBlob, type ExportableElement } from "@/lib/design-export";
+import { DuplicateIcon } from "./DesignIcons";
 
 interface DesignPropertiesPanelProps {
   selectedElement: DesignElement | null;
@@ -10,6 +11,7 @@ interface DesignPropertiesPanelProps {
   allElements: DesignElement[];
   onUpdate: (id: string, patch: Partial<DesignElement>) => void;
   onDelete: (id: string) => void;
+  onDuplicate: (id: string) => void;
 }
 
 const FILL_PALETTE = [
@@ -129,7 +131,14 @@ function ColorField({
   );
 }
 
-export function DesignPropertiesPanel({ selectedElement, parentElement, allElements, onUpdate, onDelete }: DesignPropertiesPanelProps) {
+export function DesignPropertiesPanel({
+  selectedElement,
+  parentElement,
+  allElements,
+  onUpdate,
+  onDelete,
+  onDuplicate,
+}: DesignPropertiesPanelProps) {
   if (!selectedElement) {
     return <p className="p-3 text-[11px] text-zinc-600">Ayarlarını görmek için bir eleman seçin.</p>;
   }
@@ -154,10 +163,18 @@ export function DesignPropertiesPanel({ selectedElement, parentElement, allEleme
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="flex items-center justify-between px-3 pt-3">
-        <span className="text-[11px] font-semibold text-zinc-200">{TYPE_LABEL_TR[el.type]}</span>
-        <button onClick={() => onDelete(el.id)} className="text-[11px] text-zinc-500 hover:text-red-400">
-          Sil
-        </button>
+        <div className="min-w-0">
+          <span className="block truncate text-[11px] font-semibold text-zinc-200">{el.name || TYPE_LABEL_TR[el.type]}</span>
+          {el.name && <span className="block text-[10px] text-zinc-600">{TYPE_LABEL_TR[el.type]}</span>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button onClick={() => onDuplicate(el.id)} title="Kopyala (Ctrl/Cmd+D)" className="text-zinc-500 hover:text-zinc-200">
+            <DuplicateIcon className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => onDelete(el.id)} className="text-[11px] text-zinc-500 hover:text-red-400">
+            Sil
+          </button>
+        </div>
       </div>
 
       <AccordionSection title="Hizalama" defaultOpen>
