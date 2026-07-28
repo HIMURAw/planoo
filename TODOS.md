@@ -107,6 +107,7 @@ See design doc: `~/.gstack/projects/HIMURAw-planoo/zamto-main-design-20260718-14
 **Priority:** P3
 **Depends on / blocked by:** Kullanıcı talebi / bu yönde açık bir sinyal.
 
+
 ## P3 — Gizlilik-odaklı / tek-seferlik satın alma fiyatlandırma modeli
 **What:** Mevcut Lemon Squeezy abonelik modelinin yanına veya yerine self-host / tek seferlik satın alma seçeneği.
 **Why:** Rakip analizinde dbdiagram.io'nun "kamusal şema tuzağı" ve IcePanel'in yüksek abonelik fiyatına karşı bir farklılaştırıcı olarak önerildi.
