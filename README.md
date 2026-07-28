@@ -17,6 +17,7 @@ npx prisma migrate dev # creates the schema on your MySQL/MariaDB instance
 npm run dev
 ```
 
+
 You'll need:
 - A local MySQL or MariaDB instance for `DATABASE_URL`.
 - A Google OAuth app (create one at [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)) for `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`. This is the only sign-in method. Redirect URI: `http://localhost:3000/api/auth/callback/google`.
