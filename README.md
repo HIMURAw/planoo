@@ -25,6 +25,8 @@ You'll need:
 
 See `CLAUDE.md` for architecture notes, the full command list, and how the three deployable pieces (web app, `scripts/agent.ts`, and its bundled `public/agent.js`) fit together. Deferred scope lives in `TODOS.md`.
 
+
+
 ## License
 
 MIT — see `LICENSE`.
