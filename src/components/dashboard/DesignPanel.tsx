@@ -4,8 +4,6 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import { type ProjectView, type ActivePanel } from "./DashboardLayout";
 import { FigmaPanel } from "./FigmaPanel";
-import { DesignCanvas } from "@/components/canvas/DesignCanvas";
-import type { DesignElement } from "@/components/canvas/DesignElementNode";
 import type { LinkView } from "@/components/canvas/types";
 
 // Puck'ın sürükle-bırak motoru tarayıcıya özgü işler yaptığı için ssr:false
@@ -19,28 +17,17 @@ interface DesignPanelProps {
   hasFigmaAccount: boolean;
   links: LinkView[];
   onLinksChange: (links: LinkView[]) => void;
-  initialElements: DesignElement[];
-  onDesignChanged: () => void;
   onPanelChange: (panel: ActivePanel) => void;
 }
 
-type SubTab = "canvas" | "builder" | "figma";
+type SubTab = "builder" | "figma";
 
-export function DesignPanel({
-  project,
-  hasFigmaAccount,
-  links,
-  onLinksChange,
-  initialElements,
-  onDesignChanged,
-  onPanelChange,
-}: DesignPanelProps) {
-  const [subTab, setSubTab] = useState<SubTab>("canvas");
+export function DesignPanel({ project, hasFigmaAccount, links, onLinksChange, onPanelChange }: DesignPanelProps) {
+  const [subTab, setSubTab] = useState<SubTab>("builder");
 
   if (!project) return null;
 
   const tabs: { id: SubTab; label: string }[] = [
-    { id: "canvas", label: "Tasarım Kanvası" },
     { id: "builder", label: "UI Builder" },
     { id: "figma", label: "Figma Eşleştirme" },
   ];
@@ -65,15 +52,7 @@ export function DesignPanel({
       </div>
 
       <div className="min-h-0 flex-1">
-        {subTab === "canvas" ? (
-          <div className="h-full overflow-hidden rounded-2xl border border-white/10">
-            <DesignCanvas
-              projectId={project.id}
-              initialElements={initialElements}
-              onDesignChanged={onDesignChanged}
-            />
-          </div>
-        ) : subTab === "builder" ? (
+        {subTab === "builder" ? (
           <div className="h-full overflow-hidden rounded-2xl border border-white/10">
             <BuilderEditor />
           </div>

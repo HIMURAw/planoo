@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Puck, type Data } from "@puckeditor/core";
 import "@puckeditor/core/puck.css";
+import "./puck-theme.css";
 import { puckConfig, initialPuckData, type BuilderComponents } from "./puck-config";
 
 // Bu bileşen her zaman `next/dynamic(..., { ssr: false })` ile yüklenmeli

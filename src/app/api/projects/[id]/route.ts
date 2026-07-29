@@ -19,7 +19,6 @@ export async function GET(
       links: { orderBy: { updatedAt: "desc" } },
       roadmapItems: { orderBy: { order: "asc" } },
       canvasNotes: { orderBy: { createdAt: "asc" } },
-      designElements: { orderBy: { order: "asc" } },
     },
   });
   if (!project) {

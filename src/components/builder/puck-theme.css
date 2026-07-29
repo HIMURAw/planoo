@@ -1,0 +1,52 @@
+/* Puck'ın (@puckeditor/core) kendi UI chrome'unu (sidebar, header, drawer,
+   outline/katman paneli) planoo'nun koyu tema paletine geçirir — CANVAS
+   İÇERİĞİNİ (tasarlanan SAYFANIN kendisi) DEĞİL, o bilinçli olarak nötr
+   beyaz kalıyor (bkz. puck-config.tsx'teki `root.render` notu).
+
+   Puck kendi renklerini `@layer puck-tokens { :root { ... } }` içinde
+   tanımlıyor; bu dosya bilinçli olarak bir @layer'a SARILMIYOR — CSS cascade
+   layer kurallarına göre katmansız (unlayered) stiller HER ZAMAN herhangi
+   bir @layer içindeki stillerden önce gelir (seçici özgüllüğünden/import
+   sırasından bağımsız olarak), bu yüzden aşağıdaki tek bir :root bloğu
+   Puck'ın 238 bileşen-özel değişkeninin NEREDEYSE TAMAMINI otomatik olarak
+   geçersiz kılıyor — çünkü hepsi zaten bu ~25 semantik token'a
+   `var(--puck-x, var(--puck-color-surface))` gibi bir fallback ile bağlı
+   (node_modules/@puckeditor/core/dist/index.css'te doğrulandı). */
+:root {
+  --puck-color-surface: #13101c;
+  --puck-color-surface-muted: #0b0714;
+  --puck-color-surface-subtle: #1c1728;
+  --puck-color-surface-inverse: #f4f4f5;
+
+  --puck-color-border: rgba(255, 255, 255, 0.1);
+  --puck-color-border-hover: rgba(255, 255, 255, 0.2);
+  --puck-color-border-muted: rgba(255, 255, 255, 0.06);
+  --puck-color-border-inverse: rgba(0, 0, 0, 0.12);
+
+  --puck-color-text: #f4f4f5;
+  --puck-color-text-secondary: #a1a1aa;
+  --puck-color-text-muted: #71717a;
+  --puck-color-text-subtle: #52525b;
+  --puck-color-text-inverse: #09090b;
+  --puck-color-text-disabled: #52525b;
+
+  /* planoo'nun kendi CTA/seçim rengi (violet-500) — Puck'ın varsayılan
+     azure/mavisi yerine. */
+  --puck-color-interactive: #8b5cf6;
+  --puck-color-interactive-hover: #7c3aed;
+  --puck-color-interactive-active: #6d28d9;
+  --puck-color-interactive-subtle: rgba(139, 92, 246, 0.18);
+  --puck-color-interactive-soft: rgba(139, 92, 246, 0.08);
+  --puck-color-interactive-soft-hover: rgba(139, 92, 246, 0.14);
+  --puck-color-interactive-neutral-hover: rgba(255, 255, 255, 0.06);
+  --puck-color-interactive-inverse-hover: rgba(139, 92, 246, 0.25);
+  --puck-color-interactive-inverse-active: rgba(139, 92, 246, 0.35);
+
+  --puck-color-focus-ring: #8b5cf6;
+  --puck-color-selection-bg: rgba(139, 92, 246, 0.18);
+  --puck-color-selection-border: #8b5cf6;
+  --puck-color-highlight: #ec4899;
+
+  --puck-color-bg-disabled: rgba(255, 255, 255, 0.05);
+  --puck-color-overlay-backdrop: rgba(0, 0, 0, 0.75);
+}
