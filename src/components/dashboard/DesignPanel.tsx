@@ -1,11 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { type ProjectView, type ActivePanel } from "./DashboardLayout";
 import { FigmaPanel } from "./FigmaPanel";
 import { DesignCanvas } from "@/components/canvas/DesignCanvas";
 import type { DesignElement } from "@/components/canvas/DesignElementNode";
 import type { LinkView } from "@/components/canvas/types";
+
+// Puck'ın sürükle-bırak motoru tarayıcıya özgü işler yaptığı için ssr:false
+// ile client-only yükleniyor — bkz. BuilderEditor.tsx'teki not.
+const BuilderEditor = dynamic(() => import("@/components/builder/BuilderEditor").then((m) => m.BuilderEditor), {
+  ssr: false,
+});
 
 interface DesignPanelProps {
   project: ProjectView | null;
@@ -17,7 +24,7 @@ interface DesignPanelProps {
   onPanelChange: (panel: ActivePanel) => void;
 }
 
-type SubTab = "canvas" | "figma";
+type SubTab = "canvas" | "builder" | "figma";
 
 export function DesignPanel({
   project,
@@ -34,6 +41,7 @@ export function DesignPanel({
 
   const tabs: { id: SubTab; label: string }[] = [
     { id: "canvas", label: "Tasarım Kanvası" },
+    { id: "builder", label: "UI Builder" },
     { id: "figma", label: "Figma Eşleştirme" },
   ];
 
@@ -64,6 +72,10 @@ export function DesignPanel({
               initialElements={initialElements}
               onDesignChanged={onDesignChanged}
             />
+          </div>
+        ) : subTab === "builder" ? (
+          <div className="h-full overflow-hidden rounded-2xl border border-white/10">
+            <BuilderEditor />
           </div>
         ) : (
           <FigmaPanel

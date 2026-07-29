@@ -22,10 +22,10 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
-    "@craftjs/core": "^0.2.12",
     "@lemonsqueezy/lemonsqueezy.js": "^4.0.0",
     "@prisma/adapter-mariadb": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@puckeditor/core": "^0.22.4",
     "@xyflow/react": "^12.11.2",
     "mysql2": "^3.23.0",
     "next": "16.2.10",
